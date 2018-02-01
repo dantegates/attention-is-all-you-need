@@ -3,8 +3,8 @@ from keras import backend as K
 from keras import activations
 from keras.engine.topology import Layer
 from keras.initializers import RandomNormal
-from keras.layers import Embedding, Input, Dense
-
+from keras.layers import Dense, Embedding, Input
+from keras.models import Model
 
 # https://arxiv.org/pdf/1706.03762.pdf
 ## Enccoder
@@ -65,7 +65,7 @@ class AttentionHead(Layer):
         self.d_model = d_model
         self.d_k = d_k
         self.d_v = d_v
-        self.scalar = np.sqrt(self.d_k)
+        self.scalar = K.variable(np.sqrt(self.d_k))
         self.activation = activations.get(activation)
         super().__init__(**kwargs)
 
@@ -106,6 +106,24 @@ class LayerNorm(Layer):
     def compute_output_shape(self, input_shape):
         return input_shape
 
+
+class PositionalEncoding(Layer):
+    def __init__(self, d_model, sequence_len, **kwargs):
+        super().__init__(**kwargs)
+        self.encoding = self.make_encoding(d_model, sequence_len)
+
+    def call(self, inputs):
+        return self.encoding + inputs
+
+    def make_encoding(self, d_model, sequence_len):
+        def gen():
+            for i in range(d_model):
+                f = np.sin if i % 2 == 0 else np.cos
+                yield f(np.arange(sequence_len) / ((10000**(2*i/d_model))))
+        arr = np.array(list(gen())).transpose()
+        return K.variable(arr)
+
+
 if __name__ == '__main__':
     h = 8
     # this is so cocnat(heads) has shape d_model
@@ -113,13 +131,19 @@ if __name__ == '__main__':
     N = 6
     d_model = 64 * h
     vocab_size = 30
+    sequence_len = 30
     DEBUG = False
 
     input_ = Input(shape=(None,))
-    embedding = Embedding(30, d_model)(input_)
-    layer_norm = LayerNorm(embedding)
+    embedding = Embedding(input_dim=vocab_size, output_dim=d_model,
+                          input_length=sequence_len)(input_)
+    embedding = PositionalEncoding(d_model, sequence_len)(embedding)
+    encoder = embedding
     for _ in range(N):
-        encoder = MultiHeadAttention(h=h, d_model=d_model)(embedding)
-        encoder = layer_norm(encoder)
+        encoder = MultiHeadAttention(h=h, d_model=d_model)(encoder)
+        encoder = LayerNorm(embedding)(encoder)
+        encoder = Dense(d_model, activation='relu')(encoder)
         encoder = Dense(d_model)(encoder)
-        encoder = layer_norm(encoder)
+        encoder = LayerNorm(embedding)(encoder)
+    model = Model(inputs=input_, outputs=encoder)
+    model.summary()
