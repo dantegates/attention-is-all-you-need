@@ -134,10 +134,13 @@ if __name__ == '__main__':
     sequence_len = 30
     DEBUG = False
 
+    # create input embedding
     input_ = Input(shape=(None,))
     embedding = Embedding(input_dim=vocab_size, output_dim=d_model,
                           input_length=sequence_len)(input_)
     embedding = PositionalEncoding(d_model, sequence_len)(embedding)
+
+    # make encoder
     encoder = embedding
     for _ in range(N):
         encoder = MultiHeadAttention(h=h, d_model=d_model)(encoder)
@@ -145,5 +148,11 @@ if __name__ == '__main__':
         encoder = Dense(d_model, activation='relu')(encoder)
         encoder = Dense(d_model)(encoder)
         encoder = LayerNorm(embedding)(encoder)
+
+    # make decoder
+    for _ in range(N):
+        pass
+
+    # finally pull it all together in a model
     model = Model(inputs=input_, outputs=encoder)
     model.summary()
