@@ -45,15 +45,39 @@ class Attention(Layer):
     
 
 class MultiHeadAttention(Layer):
-    def __init__(self, heads, **kwargs):
-        self.heads = heads
-        super(MultiHeadAttention, Layer).__init__(**kwargs)
+    def __init__(self, *, n_heads, d_head, **kwargs):
+        self.n_heads = n_heads
+        self.d_k = self.d_v = d_head
+        self.scalar =  np.sqrt(self.d_k)
+        super().__init__(**kwargs)
         
     def build(self, input_shape):
-        super(MultiHeadAttention, self).build(input_shape)
+
+        super().build(input_shape)
     
     def call(self, Q):
-        return K.concatenate([head(Q) for head in self.heads])
+        return K.concatenate(self.heads)
+
+    def init_head(self):
+        pass
+
+    def attention(self, Q, K, V):
+        X = self.activation(K.dot(Q, K.transpose(K)))
+        X /= self.scalar
+        return K.dot(X, V)
+
+
+class Encoder:
+    pass
+
+
+class Decoder:
+    pass
+
+
+# this is the Transformer from paper
+class Model:
+    pass
 
 
 if __name__ == '__main__':
