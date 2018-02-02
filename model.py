@@ -1,3 +1,10 @@
+"""
+Implementation of Transformer model, as described here
+
+    https://arxiv.org/pdf/1706.03762.pdf
+"""
+
+
 import numpy as np
 from keras import backend as K
 from keras import activations
@@ -6,16 +13,13 @@ from keras.initializers import RandomNormal
 from keras.layers import Dense, Embedding, Input
 from keras.models import Model
 
-# https://arxiv.org/pdf/1706.03762.pdf
-## Enccoder
-# 1. Attention layer
-# 2. multi-head attention
-#    - project Q, K, V into d_k, d_k, d_v dimmensions respectively (heads)
-#    - concat heads
-#    - project concatenation
-# 3. Add & Norm
-# 4. Feed Forward
-# 5. Add & Norm
+
+# TODO:
+# - residual connections
+# - share weight matrix in embedding layers
+# - multiply weights in embedding layers by sqrt(d_model)
+# - Mask decoder
+
 
 
 DEBUG = True
@@ -135,24 +139,43 @@ if __name__ == '__main__':
     DEBUG = False
 
     # create input embedding
-    input_ = Input(shape=(None,))
-    embedding = Embedding(input_dim=vocab_size, output_dim=d_model,
-                          input_length=sequence_len)(input_)
-    embedding = PositionalEncoding(d_model, sequence_len)(embedding)
+    input_input = Input(shape=(None,))
+    input_embedding = Embedding(input_dim=vocab_size, output_dim=d_model,
+                                input_length=sequence_len)(input_input)
+    input_embedding = PositionalEncoding(d_model, sequence_len)(input_embedding)
 
     # make encoder
-    encoder = embedding
+    encoder = input_embedding
     for _ in range(N):
         encoder = MultiHeadAttention(h=h, d_model=d_model)(encoder)
-        encoder = LayerNorm(embedding)(encoder)
+        encoder = encoder1 = LayerNorm(input_embedding)(encoder)
         encoder = Dense(d_model, activation='relu')(encoder)
         encoder = Dense(d_model)(encoder)
-        encoder = LayerNorm(embedding)(encoder)
+        encoder = LayerNorm(encoder1)(encoder)
+
+    # create output embedding
+    output_input = Input(shape=(None,))
+    output_embedding = Embedding(input_dim=vocab_size, output_dim=d_model,
+                                 input_length=sequence_len)(output_input)
+    output_embedding = PositionalEncoding(d_model, sequence_len)(output_embedding)
 
     # make decoder
+    decoder = output_embedding
     for _ in range(N):
-        pass
+        decoder = MultiHeadAttention(h=h, d_model=d_model)(decoder)
+        decoder = decoder1 = LayerNorm(output_embedding)(decoder)
+        decoder = MultiHeadAttention(h=h, d_model=d_model)(encoder)
+        decoder = decoder2 = LayerNorm(decoder1)(decoder)
+        decoder = Dense(d_model, activation='relu')(decoder)
+        decoder = Dense(d_model)(decoder)
+        decoder = LayerNorm(decoder2)(decoder)
+    # finally stack a linear transformation with softmax activation
+    # to get next token probabilities
+    decoder = Dense(d_model, activation='softmax')(decoder)
 
     # finally pull it all together in a model
-    model = Model(inputs=input_, outputs=encoder)
-    model.summary()
+    encoder_model = Model(inputs=input_input, outputs=encoder)
+    encoder_model.summary()
+
+    decoder_model = Model(inputs=[input_input, output_input], outputs=decoder)
+    decoder_model.summary()
