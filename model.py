@@ -4,7 +4,9 @@ Implementation of Transformer model, as described here
     https://arxiv.org/pdf/1706.03762.pdf
 """
 
-from __future__ import division, print_function
+from __future__ import division, print_function, absolute_import
+
+import argparse
 
 import keras
 import numpy as np
@@ -12,15 +14,17 @@ from keras import backend as K
 from keras import activations
 from keras.engine.topology import Layer
 from keras.initializers import RandomNormal
-from keras.layers import Dense, Embedding, Input, Add
+from keras.layers import Dense, Embedding, Input, Add, Lambda
 from keras.models import Model
 
+from data import training_data
+
+
 # TODO:
-# - residual connections
-# - share weight matrix in embedding layers
-# - multiply weights in embedding layers by sqrt(d_model)
 # - Mask decoder
 # - rename d_model to output_shape
+# - share embedding weights with final linear transformation
+# - dropout
 
 
 DEBUG = False
@@ -64,13 +68,14 @@ class MultiHeadAttention(Layer):
 
 
 class AttentionHead(Layer):
-    def __init__(self, d_model, d_k, d_v, activation, **kwargs):
+    def __init__(self, d_model, d_k, d_v, activation, masking=False, **kwargs):
         debug('init AttentionHead') 
         self.d_model = d_model
         self.d_k = d_k
         self.d_v = d_v
         self.scalar = np.sqrt(self.d_k)
         self.activation = activations.get(activation)
+        self.masking = masking
         super().__init__(**kwargs)
 
     def build(self, input_shape):
@@ -140,15 +145,23 @@ class LayerNormalization(Layer):
         return input_shape
 
 
-def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
-               sequence_len):
+def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size, sequence_len):
 
-    # create input embedding
+    # create embedding and model inputs
+    embedding = Embedding(input_dim=vocab_size, output_dim=d_model,
+                          input_length=sequence_len, name='embedding')
+    embedding_scalar = Lambda(lambda x: x*np.sqrt(d_model), name='embedding_scalar')
+    positional_encoding = PositionalEncoding(d_model, sequence_len)
+
     encoder_input = Input(shape=(None,), name='encoder_input')
-    encoder_embedding = Embedding(input_dim=vocab_size, output_dim=d_model,
-                                  input_length=sequence_len, name='encoder_embedding')
-    encoder_embedding = encoder_embedding(encoder_input)
-    encoder_embedding = PositionalEncoding(d_model, sequence_len)(encoder_embedding)
+    encoder_embedding = embedding(encoder_input)
+    encoder_embedding = positional_encoding(encoder_embedding)
+    encoder_embedding = embedding_scalar(encoder_embedding)
+
+    decoder_input = Input(shape=(None,), name='decoder_input')
+    decoder_embedding = embedding(decoder_input)
+    decoder_embedding = positional_encoding(decoder_embedding)
+    decoder_embedding = embedding_scalar(decoder_embedding)
 
     # make encoder
     encoder_layer_input = encoder_embedding
@@ -172,13 +185,6 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
         encoder_layer_input = encoder_sublayer2
     # finally pull it all together in a model
     encoder_model = Model(inputs=encoder_input, outputs=encoder_sublayer2)
-
-    # create output embedding
-    decoder_input = Input(shape=(None,), name='decoder_input')
-    decoder_embedding = Embedding(input_dim=vocab_size, output_dim=d_model,
-                                  input_length=sequence_len, name='decoder_embedding')
-    decoder_embedding = decoder_embedding(decoder_input)
-    decoder_embedding = PositionalEncoding(d_model, sequence_len)(decoder_embedding)
 
     # make decoder
     decoder_layer_input = decoder_embedding
@@ -209,32 +215,56 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
         decoder_layer_input = decoder_sublayer3
     # finally stack a linear transformation with softmax activation
     # to get next token probabilities
-    decoder = Dense(d_model, activation='softmax')(decoder_sublayer3)
+    decoder = Dense(vocab_size, activation='softmax')(decoder_sublayer3)
     decoder_model = Model(inputs=[encoder_input, decoder_input], outputs=decoder)
 
     return encoder_model, decoder_model
 
 
+def init_cli():
+    parser = argparse.ArgumentParser('debug interface to attention is all you need model')
+    parser.add_argument('--summarize-models', action='store_true', default=False)
+    parser.add_argument('--summarize-encoder', action='store_true', default=False)
+    parser.add_argument('--summarize-decoder', action='store_true', default=False)
+    parser.add_argument('--plot-models', action='store_true', default=False)
+    parser.add_argument('--plot-encoder', action='store_true', default=False)
+    parser.add_argument('--plot-decoder', action='store_true', default=False)
+    parser.add_argument('--train', action='store_true', default=False)
+    parser.add_argument('--debug', action='store_true', default=False)
+    cli = parser.parse_args(sys.argv[1:])
+    return cli
+
+
 if __name__ == '__main__':
+    import sys
+
     n_heads = 8
-    # # this is so cocnat(heads) has shape d_model
-    # # (as each attention output has shape d_v)
     encoder_layers = decoder_layers = 6
     d_model = 64 * n_heads
     vocab_size = 30
     sequence_len = 30
     test_sequence_len = 100
-    DEBUG = False
+    cli = init_cli()
+    DEBUG = cli.debug
 
     encoder, decoder = init_model(
         n_heads=n_heads, encoder_layers=encoder_layers,
         decoder_layers=decoder_layers, d_model=d_model, vocab_size=vocab_size,
         sequence_len=sequence_len)
 
-    encoder.summary(line_length=100)
-    decoder.summary(line_length=100)
-    keras.utils.plot_model(encoder, 'encoder.dot')
-    keras.utils.plot_model(decoder, 'decoder.dot')
+    if cli.summarize_models or cli.summarize_encoder:
+        print('ENCODER SUMMARY')
+        encoder.summary(line_length=100)
+    if cli.summarize_models or cli.summarize_decoder:
+        print('DECODER SUMMARY')
+        decoder.summary(line_length=100)
+    if cli.plot_models or cli.plot_encoder:
+        keras.utils.plot_model(encoder, 'encoder.dot')
+    if cli.plot_models or cli.plot_encoder:
+        keras.utils.plot_model(decoder, 'decoder.dot')
 
-    sequence = np.array(np.randint(a=0, b=vocab_size)
-                        for _ in range(test_sequence_len))
+    if cli.train:
+        x, x, y = training_data(sequence_len)
+        decoder.compile(loss='categorical_crossentropy', optimizer='adam')
+        decoder.fit([x, x], y, batch_size=30, epochs=1)
+
