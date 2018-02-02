@@ -12,7 +12,7 @@ from keras import backend as K
 from keras import activations
 from keras.engine.topology import Layer
 from keras.initializers import RandomNormal
-from keras.layers import Dense, Embedding, Input
+from keras.layers import Dense, Embedding, Input, Add
 from keras.models import Model
 
 # TODO:
@@ -21,6 +21,7 @@ from keras.models import Model
 # - multiply weights in embedding layers by sqrt(d_model)
 # - Mask decoder
 # - hook up encoder/decoder correctly for training/inference
+# - rename d_model to output_shape
 
 
 DEBUG = False
@@ -132,61 +133,63 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
                sequence_len):
 
     # create input embedding
-    input_input = Input(shape=(None,))
-    input_embedding = Embedding(input_dim=vocab_size, output_dim=d_model,
-                                input_length=sequence_len)(input_input)
-    input_embedding = PositionalEncoding(d_model, sequence_len)(input_embedding)
+    encoder_input = Input(shape=(None,), name='encoder_input')
+    encoder_embedding = Embedding(input_dim=vocab_size, output_dim=d_model,
+                                  input_length=sequence_len, name='encoder_embedding')
+    encoder_embedding = encoder_embedding(encoder_input)
+    encoder_embedding = PositionalEncoding(d_model, sequence_len)(encoder_embedding)
 
     # make encoder
-    encoder_layer_input = input_embedding
+    encoder_layer_input = encoder_embedding
     for i in range(1, encoder_layers+1):
         names = iter([
-            'encoder_subl%s_mha' % i,
-            'encoder_subl%s_layernorm1' % i,
-            'encoder_subl%s_ffn1' % i,
-            'encoder_subl%s_ffn2' % i,
-            'encoder_subl%s_layernorm2' % i,
+            'encoder_layer%s_mha' % i,
+            'encoder_layer%s_layernorm1' % i,
+            'encoder_layer%s_ffn1' % i,
+            'encoder_layer%s_ffn2' % i,
+            'encoder_layer%s_layernorm2' % i,
         ])
         encoder = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(encoder_layer_input)
-        encoder_sublayer1 = LayerNorm(encoder_layer_input, name=next(names))(encoder)
+        encoder_sublayer1 = Add(name=next(names))([encoder_layer_input, encoder])
         encoder = Dense(d_model, activation='relu', name=next(names))(encoder_sublayer1)
         encoder = Dense(d_model, name=next(names))(encoder)
-        encoder = LayerNorm(encoder_sublayer1, name=next(names))(encoder)
+        encoder = Add(name=next(names))([encoder_sublayer1, encoder])
         encoder_layer_input = encoder
     # finally pull it all together in a model
-    encoder_model = Model(inputs=input_input, outputs=encoder)
+    encoder_model = Model(inputs=encoder_input, outputs=encoder)
 
     # create output embedding
-    output_input = Input(shape=(None,))
-    output_embedding = Embedding(input_dim=vocab_size, output_dim=d_model,
-                                 input_length=sequence_len)(output_input)
-    output_embedding = PositionalEncoding(d_model, sequence_len)(output_embedding)
+    decoder_input = Input(shape=(None,), name='decoder_input')
+    decoder_embedding = Embedding(input_dim=vocab_size, output_dim=d_model,
+                                  input_length=sequence_len, name='decoder_embedding')
+    decoder_embedding = decoder_embedding(decoder_input)
+    decoder_embedding = PositionalEncoding(d_model, sequence_len)(decoder_embedding)
 
     # make decoder
-    decoder_layer_input = output_embedding
+    decoder_layer_input = decoder_embedding
     for i in range(1, decoder_layers+1):
         names = iter([
-            'decoder_subl%s_mha1' % i,
-            'decoder_subl%s_layernorm1' % i,
-            'decoder_subl%s_mha2' % i,
-            'decoder_subl%s_layernorm2' % i,
-            'decoder_subl%s_ffn1' % i,
-            'decoder_subl%s_ffn2' % i,
-            'decoder_subl%s_layernorm3' % i,
+            'decoder_layer%s_mha1' % i,
+            'decoder_layer%s_layernorm1' % i,
+            'decoder_layer%s_mha2' % i,
+            'decoder_layer%s_layernorm2' % i,
+            'decoder_layer%s_ffn1' % i,
+            'decoder_layer%s_ffn2' % i,
+            'decoder_layer%s_layernorm3' % i,
         ])
-        decoder = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(decoder_layer_input)
-        decoder_sublayer1 = LayerNorm(decoder_layer_input, name=next(names))(decoder)
-        decoder = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(encoder)
-        decoder_sublayer2 = LayerNorm(decoder_sublayer1, name=next(names))(decoder)
-        decoder = Dense(d_model, activation='relu', name=next(names))(decoder_sublayer2)
-        decoder = Dense(d_model, name=next(names))(decoder)
-        decoder = LayerNorm(decoder_sublayer2, name=next(names))(decoder)
+        decoder_sublayer1 = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(decoder_layer_input)
+        decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
+        decoder_sublayer2 = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(encoder)
+        decoder_sublayer2 = Add(name=next(names))([decoder_sublayer1, decoder_sublayer2])
+        decoder_sublayer3 = Dense(d_model, activation='relu', name=next(names))(decoder_sublayer2)
+        decoder_sublayer3 = Dense(d_model, name=next(names))(decoder_sublayer3)
+        decoder_sublayer3 = Add(name=next(names))([decoder_sublayer2, decoder_sublayer3])
         # output of layer becomes input of next layer
-        decoder_layer_input = decoder
+        decoder_layer_input = decoder_sublayer3
     # finally stack a linear transformation with softmax activation
     # to get next token probabilities
-    decoder = Dense(d_model, activation='softmax')(decoder)
-    decoder_model = Model(inputs=[input_input, output_input], outputs=decoder)
+    decoder = Dense(d_model, activation='softmax')(decoder_sublayer3)
+    decoder_model = Model(inputs=[encoder_input, decoder_input], outputs=decoder)
 
     return encoder_model, decoder_model
 
@@ -195,7 +198,7 @@ if __name__ == '__main__':
     n_heads = 8
     # # this is so cocnat(heads) has shape d_model
     # # (as each attention output has shape d_v)
-    encoder_layers = decoder_layers = 6
+    encoder_layers = decoder_layers = 1
     d_model = 64 * n_heads
     vocab_size = 30
     sequence_len = 30
