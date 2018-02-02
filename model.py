@@ -20,7 +20,6 @@ from keras.models import Model
 # - share weight matrix in embedding layers
 # - multiply weights in embedding layers by sqrt(d_model)
 # - Mask decoder
-# - hook up encoder/decoder correctly for training/inference
 # - rename d_model to output_shape
 
 
@@ -31,7 +30,7 @@ def debug(*args, **kwargs):
 
 
 class MultiHeadAttention(Layer):
-    def __init__(self, *, h, d_model, **kwargs):
+    def __init__(self, h, d_model, **kwargs):
         # activation = comparison
         debug('init MultiHeadAttention')
         self.h = h
@@ -99,19 +98,6 @@ class AttentionHead(Layer):
         return K.dot(value_weights, v_proj)
 
 
-class LayerNorm(Layer):
-    def __init__(self, x, **kwargs):
-        super().__init__(**kwargs)
-        self.x = x
-        self.supports_masking = True
-
-    def call(self, inputs):
-        return self.x + inputs
-
-    def compute_output_shape(self, input_shape):
-        return input_shape
-
-
 class PositionalEncoding(Layer):
     def __init__(self, d_model, sequence_len, **kwargs):
         super().__init__(**kwargs)
@@ -129,6 +115,31 @@ class PositionalEncoding(Layer):
         return K.variable(arr)
 
 
+class LayerNormalization(Layer):
+    def __init__(self, epsilon=1e-6, **kwargs):
+        self.epsilon = epsilon
+        super().__init__(**kwargs)
+
+    def build(self, input_shape):
+        self.gain = self.add_weight(name='gain',
+                                    shape=input_shape[1:],
+                                    initializer='ones',
+                                    trainable=True)
+        self.bias = self.add_weight(name='bias',
+                                    shape=input_shape[1:],
+                                    initializer='ones',
+                                    trainable=True)
+        super().build(input_shape)
+
+    def call(self, x):
+        mean = K.mean(x, axis=-1, keepdims=True)
+        std = K.std(x, axis=-1, keepdims=True)
+        return (self.gain / (std + self.epsilon)) * (x - mean) + self.bias
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
+
 def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
                sequence_len):
 
@@ -144,19 +155,23 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
     for i in range(1, encoder_layers+1):
         names = iter([
             'encoder_layer%s_mha' % i,
+            'encoder_layer%s_residual1' % i,
             'encoder_layer%s_layernorm1' % i,
             'encoder_layer%s_ffn1' % i,
             'encoder_layer%s_ffn2' % i,
+            'encoder_layer%s_residual2' % i,
             'encoder_layer%s_layernorm2' % i,
         ])
         encoder = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(encoder_layer_input)
         encoder_sublayer1 = Add(name=next(names))([encoder_layer_input, encoder])
-        encoder = Dense(d_model, activation='relu', name=next(names))(encoder_sublayer1)
-        encoder = Dense(d_model, name=next(names))(encoder)
-        encoder = Add(name=next(names))([encoder_sublayer1, encoder])
-        encoder_layer_input = encoder
+        encoder_sublayer1 = LayerNormalization(name=next(names))(encoder_sublayer1)
+        encoder_sublayer2 = Dense(d_model, activation='relu', name=next(names))(encoder_sublayer1)
+        encoder_sublayer2 = Dense(d_model, name=next(names))(encoder_sublayer2)
+        encoder_sublayer2 = Add(name=next(names))([encoder_sublayer1, encoder_sublayer2])
+        encoder_sublayer2 = LayerNormalization(name=next(names))(encoder_sublayer2)
+        encoder_layer_input = encoder_sublayer2
     # finally pull it all together in a model
-    encoder_model = Model(inputs=encoder_input, outputs=encoder)
+    encoder_model = Model(inputs=encoder_input, outputs=encoder_sublayer2)
 
     # create output embedding
     decoder_input = Input(shape=(None,), name='decoder_input')
@@ -170,20 +185,26 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
     for i in range(1, decoder_layers+1):
         names = iter([
             'decoder_layer%s_mha1' % i,
+            'decoder_layer%s_residual1' % i,
             'decoder_layer%s_layernorm1' % i,
             'decoder_layer%s_mha2' % i,
+            'decoder_layer%s_residual2' % i,
             'decoder_layer%s_layernorm2' % i,
             'decoder_layer%s_ffn1' % i,
             'decoder_layer%s_ffn2' % i,
+            'decoder_layer%s_residual3' % i,
             'decoder_layer%s_layernorm3' % i,
         ])
         decoder_sublayer1 = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(decoder_layer_input)
         decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
+        decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
         decoder_sublayer2 = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(encoder)
         decoder_sublayer2 = Add(name=next(names))([decoder_sublayer1, decoder_sublayer2])
+        decoder_sublayer2 = LayerNormalization(name=next(names))(decoder_sublayer2)
         decoder_sublayer3 = Dense(d_model, activation='relu', name=next(names))(decoder_sublayer2)
         decoder_sublayer3 = Dense(d_model, name=next(names))(decoder_sublayer3)
         decoder_sublayer3 = Add(name=next(names))([decoder_sublayer2, decoder_sublayer3])
+        decoder_sublayer3 = LayerNormalization(name=next(names))(decoder_sublayer3)
         # output of layer becomes input of next layer
         decoder_layer_input = decoder_sublayer3
     # finally stack a linear transformation with softmax activation
@@ -198,7 +219,7 @@ if __name__ == '__main__':
     n_heads = 8
     # # this is so cocnat(heads) has shape d_model
     # # (as each attention output has shape d_v)
-    encoder_layers = decoder_layers = 1
+    encoder_layers = decoder_layers = 6
     d_model = 64 * n_heads
     vocab_size = 30
     sequence_len = 30
@@ -210,7 +231,7 @@ if __name__ == '__main__':
         decoder_layers=decoder_layers, d_model=d_model, vocab_size=vocab_size,
         sequence_len=sequence_len)
 
-    # encoder.summary(line_length=100)
+    encoder.summary(line_length=100)
     decoder.summary(line_length=100)
     keras.utils.plot_model(encoder, 'encoder.dot')
     keras.utils.plot_model(decoder, 'decoder.dot')
