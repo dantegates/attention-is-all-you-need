@@ -4,6 +4,7 @@ Implementation of Transformer model, as described here
     https://arxiv.org/pdf/1706.03762.pdf
 """
 
+from __future__ import print_function, division
 
 import numpy as np
 from keras import backend as K
@@ -19,10 +20,10 @@ from keras.models import Model
 # - share weight matrix in embedding layers
 # - multiply weights in embedding layers by sqrt(d_model)
 # - Mask decoder
+# - hook up encoder/decoder correctly for training/inference
 
 
-
-DEBUG = True
+DEBUG = False
 def debug(*args, **kwargs):
     if DEBUG:
         print(*args, **kwargs)
@@ -54,7 +55,6 @@ class MultiHeadAttention(Layer):
                                    trainable=True)
         self.heads = [AttentionHead(self.d_model, self.d_k, self.d_v, activation='softmax')
                       for _ in range(self.h)]
-        # _ = [head.build((self.d_model, self.d_k)) for head in self.heads]
         super().build(input_shape)
     
     def call(self, q):
@@ -69,7 +69,7 @@ class AttentionHead(Layer):
         self.d_model = d_model
         self.d_k = d_k
         self.d_v = d_v
-        self.scalar = K.variable(np.sqrt(self.d_k))
+        self.scalar = np.sqrt(self.d_k)
         self.activation = activations.get(activation)
         super().__init__(**kwargs)
 
@@ -128,15 +128,8 @@ class PositionalEncoding(Layer):
         return K.variable(arr)
 
 
-if __name__ == '__main__':
-    h = 8
-    # this is so cocnat(heads) has shape d_model
-    # (as each attention output has shape d_v)
-    N = 6
-    d_model = 64 * h
-    vocab_size = 30
-    sequence_len = 30
-    DEBUG = False
+def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
+               sequence_len):
 
     # create input embedding
     input_input = Input(shape=(None,))
@@ -146,12 +139,13 @@ if __name__ == '__main__':
 
     # make encoder
     encoder = input_embedding
-    for _ in range(N):
-        encoder = MultiHeadAttention(h=h, d_model=d_model)(encoder)
-        encoder = encoder1 = LayerNorm(input_embedding)(encoder)
-        encoder = Dense(d_model, activation='relu')(encoder)
+    for _ in range(encoder_layers):
+        encoder = MultiHeadAttention(h=n_heads, d_model=d_model)(encoder)
+        encoder_sublayer1 = LayerNorm(input_embedding)(encoder)
+        encoder = Dense(d_model, activation='relu')(encoder_sublayer1)
         encoder = Dense(d_model)(encoder)
-        encoder = LayerNorm(encoder1)(encoder)
+        encoder = LayerNorm(encoder_sublayer1)(encoder)
+        input_embedding = encoder
 
     # create output embedding
     output_input = Input(shape=(None,))
@@ -161,21 +155,39 @@ if __name__ == '__main__':
 
     # make decoder
     decoder = output_embedding
-    for _ in range(N):
-        decoder = MultiHeadAttention(h=h, d_model=d_model)(decoder)
-        decoder = decoder1 = LayerNorm(output_embedding)(decoder)
-        decoder = MultiHeadAttention(h=h, d_model=d_model)(encoder)
-        decoder = decoder2 = LayerNorm(decoder1)(decoder)
-        decoder = Dense(d_model, activation='relu')(decoder)
+    for _ in range(decoder_layers):
+        decoder = MultiHeadAttention(h=n_heads, d_model=d_model)(decoder)
+        decoder_sublayer1 = LayerNorm(output_embedding)(decoder)
+        decoder_sublayer2 = MultiHeadAttention(h=n_heads, d_model=d_model)(encoder)
+        decoder = Dense(d_model, activation='relu')(decoder_sublayer2)
         decoder = Dense(d_model)(decoder)
-        decoder = LayerNorm(decoder2)(decoder)
+        decoder = LayerNorm(decoder_sublayer2)(decoder)
+        output_embedding = decoder  # correc?
     # finally stack a linear transformation with softmax activation
     # to get next token probabilities
     decoder = Dense(d_model, activation='softmax')(decoder)
 
     # finally pull it all together in a model
     encoder_model = Model(inputs=input_input, outputs=encoder)
-    encoder_model.summary()
-
     decoder_model = Model(inputs=[input_input, output_input], outputs=decoder)
-    decoder_model.summary()
+
+    return encoder_model, decoder_model
+
+
+if __name__ == '__main__':
+    n_heads = 8
+    # # this is so cocnat(heads) has shape d_model
+    # # (as each attention output has shape d_v)
+    encoder_layers = decoder_layers = 6
+    d_model = 64 * n_heads
+    vocab_size = 30
+    sequence_len = 30
+    DEBUG = False
+
+    encoder, decoder = init_model(
+        n_heads=n_heads, encoder_layers=encoder_layers,
+        decoder_layers=decoder_layers, d_model=d_model, vocab_size=vocab_size,
+        sequence_len=sequence_len)
+
+    encoder.summary()
+    decoder.summary()
