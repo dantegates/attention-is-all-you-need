@@ -104,8 +104,8 @@ class LayerNorm(Layer):
         self.x = x
         self.supports_masking = True
 
-    def call(self, x, sublayer):
-        return self.x + sublayer
+    def call(self, inputs):
+        return self.x + inputs
 
     def compute_output_shape(self, input_shape):
         return input_shape
@@ -138,7 +138,7 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
     input_embedding = PositionalEncoding(d_model, sequence_len)(input_embedding)
 
     # make encoder
-    encoder = input_embedding
+    encoder_layer_input = input_embedding
     for i in range(1, encoder_layers+1):
         names = iter([
             'encoder_subl%s_mha' % i,
@@ -147,12 +147,12 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
             'encoder_subl%s_ffn2' % i,
             'encoder_subl%s_layernorm2' % i,
         ])
-        encoder = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(encoder)
-        encoder_sublayer1 = LayerNorm(input_embedding, name=next(names))(encoder)
+        encoder = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(encoder_layer_input)
+        encoder_sublayer1 = LayerNorm(encoder_layer_input, name=next(names))(encoder)
         encoder = Dense(d_model, activation='relu', name=next(names))(encoder_sublayer1)
         encoder = Dense(d_model, name=next(names))(encoder)
         encoder = LayerNorm(encoder_sublayer1, name=next(names))(encoder)
-        input_embedding = encoder
+        encoder_layer_input = encoder
     # finally pull it all together in a model
     encoder_model = Model(inputs=input_input, outputs=encoder)
 
@@ -163,7 +163,7 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
     output_embedding = PositionalEncoding(d_model, sequence_len)(output_embedding)
 
     # make decoder
-    decoder = output_embedding
+    decoder_layer_input = output_embedding
     for i in range(1, decoder_layers+1):
         names = iter([
             'decoder_subl%s_mha1' % i,
@@ -174,14 +174,15 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
             'decoder_subl%s_ffn2' % i,
             'decoder_subl%s_layernorm3' % i,
         ])
-        decoder = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(decoder)
-        decoder_sublayer1 = LayerNorm(output_embedding, name=next(names))(decoder)
+        decoder = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(decoder_layer_input)
+        decoder_sublayer1 = LayerNorm(decoder_layer_input, name=next(names))(decoder)
         decoder = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(encoder)
         decoder_sublayer2 = LayerNorm(decoder_sublayer1, name=next(names))(decoder)
         decoder = Dense(d_model, activation='relu', name=next(names))(decoder_sublayer2)
         decoder = Dense(d_model, name=next(names))(decoder)
         decoder = LayerNorm(decoder_sublayer2, name=next(names))(decoder)
-        output_embedding = decoder  # correc?
+        # output of layer becomes input of next layer
+        decoder_layer_input = decoder
     # finally stack a linear transformation with softmax activation
     # to get next token probabilities
     decoder = Dense(d_model, activation='softmax')(decoder)
