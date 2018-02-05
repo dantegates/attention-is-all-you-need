@@ -7,6 +7,7 @@ Implementation of Transformer model, as described here
 from __future__ import absolute_import, division, print_function
 
 import argparse
+import subprocess as sp
 
 import keras
 import numpy as np
@@ -205,93 +206,112 @@ class LayerNormalization(Layer):
         return input_shape
 
 
-def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
-               sequence_len, n_outputs=None):
+class Transformer(Model):
+    def __init__(self, n_heads, encoder_layers, decoder_layers, d_model,
+                 vocab_size, sequence_len, n_outputs=None):
+        self.n_heads = n_heads
+        self.encoder_layers = encoder_layers
+        self.decoder_layers = decoder_layers
+        self.d_model = d_model
+        self.vocab_size = vocab_size
+        self.sequence_len = sequence_len
+        self.encoder_input, self.decoder_input = self.init_input()
+        self.encoder_embedding, self.decoder_embedding = self.init_embeddings()
+        self.encoder = self.init_encoder()
+        self.decoder = self.init_decoder()
+        self.encoder_model = Model(self.encoder_input, self.encoder)
+        self.decoder_model = Model(self.decoder_input, self.decoder)
+        super().__init__(inputs=[self.encoder_input, self.decoder_input],
+                         outputs=self.decoder)
 
-    # create embedding and model inputs
-    embedding = Embedding(input_dim=vocab_size, output_dim=d_model,
-                          input_length=sequence_len, name='embedding')
-    embedding_scalar = Lambda(lambda x: x*np.sqrt(d_model),
-                              output_shape=lambda x: x,
-                              name='embedding_scalar')
-    positional_encoding = PositionalEncoding(d_model, sequence_len)
+    def init_input(self):
+        encoder_input = Input(shape=(None,), name='encoder_input')
+        decoder_input = Input(shape=(None,), name='decoder_input')
+        return encoder_input, decoder_input
 
-    encoder_input = Input(shape=(None,), name='encoder_input')
-    encoder_embedding = embedding(encoder_input)
-    encoder_embedding = positional_encoding(encoder_embedding)
-    encoder_embedding = embedding_scalar(encoder_embedding)
+    def init_embeddings(self):
+        embedding = Embedding(input_dim=self.vocab_size, output_dim=self.d_model,
+                              input_length=self.sequence_len, name='embedding')
+        embedding_scalar = Lambda(lambda x: x*np.sqrt(self.d_model),
+                                  output_shape=lambda x: x,
+                                  name='embedding_scalar')
+        positional_encoding = PositionalEncoding(d_model, sequence_len)
 
-    # shared_weights = embedding.embeddings
-    # final_transformation = Lambda(lambda x: K.dot(K.transpose(shared_weights), x))
+        encoder_embedding = embedding(self.encoder_input)
+        encoder_embedding = positional_encoding(encoder_embedding)
+        encoder_embedding = embedding_scalar(encoder_embedding)
 
-    decoder_input = Input(shape=(None,), name='decoder_input')
-    decoder_embedding = embedding(decoder_input)
-    decoder_embedding = positional_encoding(decoder_embedding)
-    decoder_embedding = embedding_scalar(decoder_embedding)
+        # shared_weights = embedding.embeddings
+        # final_transformation = Lambda(lambda x: K.dot(K.transpose(shared_weights), x))
 
-    # make encoder
-    debug('making encoder')
-    encoder_layer_input = encoder_embedding
-    for i in range(1, encoder_layers+1):
-        names = iter([
-            'encoder_layer%s_mha' % i,
-            'encoder_layer%s_residual1' % i,
-            'encoder_layer%s_layernorm1' % i,
-            'encoder_layer%s_ffn1' % i,
-            'encoder_layer%s_ffn2' % i,
-            'encoder_layer%s_residual2' % i,
-            'encoder_layer%s_layernorm2' % i,
-        ])
-        encoder = MultiHeadAttention(n_heads=n_heads, d_model=d_model, name=next(names))
-        encoder = encoder(encoder_layer_input, k=encoder_layer_input, v=encoder_layer_input)
-        encoder_sublayer1 = Add(name=next(names))([encoder_layer_input, encoder])
-        encoder_sublayer1 = LayerNormalization(name=next(names))(encoder_sublayer1)
-        encoder_sublayer2 = Dense(d_model, activation='relu', name=next(names))(encoder_sublayer1)
-        encoder_sublayer2 = Dense(d_model, name=next(names))(encoder_sublayer2)
-        encoder_sublayer2 = Add(name=next(names))([encoder_sublayer1, encoder_sublayer2])
-        encoder_sublayer2 = LayerNormalization(name=next(names))(encoder_sublayer2)
-        encoder_layer_input = encoder_sublayer2
-    # finally pull it all together in a model
-    encoder_model = Model(inputs=encoder_input, outputs=encoder_sublayer2)
+        decoder_embedding = embedding(self.decoder_input)
+        decoder_embedding = positional_encoding(decoder_embedding)
+        decoder_embedding = embedding_scalar(decoder_embedding)
+        return encoder_embedding, decoder_embedding
 
-    # make decoder
-    decoder_layer_input = decoder_embedding
-    debug('making decoder')
-    for i in range(1, decoder_layers+1):
-        names = iter([
-            'decoder_layer%s_mha1' % i,
-            'decoder_layer%s_residual1' % i,
-            'decoder_layer%s_layernorm1' % i,
-            'decoder_layer%s_mha2' % i,
-            'decoder_layer%s_residual2' % i,
-            'decoder_layer%s_layernorm2' % i,
-            'decoder_layer%s_ffn1' % i,
-            'decoder_layer%s_ffn2' % i,
-            'decoder_layer%s_residual3' % i,
-            'decoder_layer%s_layernorm3' % i,
-        ])
-        decoder_sublayer1 = MultiHeadAttention(n_heads=n_heads, d_model=d_model, masking=True, name=next(names))
-        decoder_sublayer1 = decoder_sublayer1(decoder_layer_input, k=decoder_layer_input, v=decoder_layer_input)
-        decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
-        decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
-        decoder_sublayer2 = MultiHeadAttention(n_heads=n_heads, d_model=d_model, name=next(names))
-        decoder_sublayer2 = decoder_sublayer2(decoder_sublayer1, k=encoder, v=encoder)
-        decoder_sublayer2 = Add(name=next(names))([decoder_sublayer1, decoder_sublayer2])
-        decoder_sublayer2 = LayerNormalization(name=next(names))(decoder_sublayer2)
-        decoder_sublayer3 = Dense(d_model, activation='relu', name=next(names))(decoder_sublayer2)
-        decoder_sublayer3 = Dense(d_model, name=next(names))(decoder_sublayer3)
-        decoder_sublayer3 = Add(name=next(names))([decoder_sublayer2, decoder_sublayer3])
-        decoder_sublayer3 = LayerNormalization(name=next(names))(decoder_sublayer3)
-        # output of layer becomes input of next layer
-        decoder_layer_input = decoder_sublayer3
-    # finally stack a linear transformation with softmax activation
-    # to get next token probabilities
-    # decoder = final_transformation(decoder_sublayer3)
-    # decoder = Softmax()(decoder)
-    decoder = Dense(vocab_size, activation='softmax', name='decoder_output')(decoder_sublayer3)
-    decoder_model = Model(inputs=[encoder_input, decoder_input], outputs=decoder)
+    def init_encoder(self):
+        # make encoder
+        debug('making encoder')
+        encoder_layer_input = self.encoder_embedding
+        for i in range(1, self.encoder_layers+1):
+            names = iter([
+                'encoder_layer%s_mha' % i,
+                'encoder_layer%s_residual1' % i,
+                'encoder_layer%s_layernorm1' % i,
+                'encoder_layer%s_ffn1' % i,
+                'encoder_layer%s_ffn2' % i,
+                'encoder_layer%s_residual2' % i,
+                'encoder_layer%s_layernorm2' % i,
+            ])
+            encoder = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, name=next(names))
+            encoder = encoder(encoder_layer_input, k=encoder_layer_input, v=encoder_layer_input)
+            encoder_sublayer1 = Add(name=next(names))([encoder_layer_input, encoder])
+            encoder_sublayer1 = LayerNormalization(name=next(names))(encoder_sublayer1)
+            encoder_sublayer2 = Dense(d_model, activation='relu', name=next(names))(encoder_sublayer1)
+            encoder_sublayer2 = Dense(d_model, name=next(names))(encoder_sublayer2)
+            encoder_sublayer2 = Add(name=next(names))([encoder_sublayer1, encoder_sublayer2])
+            encoder_sublayer2 = LayerNormalization(name=next(names))(encoder_sublayer2)
+            encoder_layer_input = encoder_sublayer2
+        # finally pull it all together in a model
+        return encoder_sublayer2
 
-    return encoder_model, decoder_model
+    def init_decoder(self):
+        # make decoder
+        decoder_layer_input = self.decoder_embedding
+        debug('making decoder')
+        for i in range(1, self.decoder_layers+1):
+            names = iter([
+                'decoder_layer%s_mha1' % i,
+                'decoder_layer%s_residual1' % i,
+                'decoder_layer%s_layernorm1' % i,
+                'decoder_layer%s_mha2' % i,
+                'decoder_layer%s_residual2' % i,
+                'decoder_layer%s_layernorm2' % i,
+                'decoder_layer%s_ffn1' % i,
+                'decoder_layer%s_ffn2' % i,
+                'decoder_layer%s_residual3' % i,
+                'decoder_layer%s_layernorm3' % i,
+            ])
+            decoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, masking=True, name=next(names))
+            decoder_sublayer1 = decoder_sublayer1(decoder_layer_input, k=decoder_layer_input, v=decoder_layer_input)
+            decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
+            decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
+            decoder_sublayer2 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, name=next(names))
+            decoder_sublayer2 = decoder_sublayer2(decoder_sublayer1, k=self.encoder, v=self.encoder)
+            decoder_sublayer2 = Add(name=next(names))([decoder_sublayer1, decoder_sublayer2])
+            decoder_sublayer2 = LayerNormalization(name=next(names))(decoder_sublayer2)
+            decoder_sublayer3 = Dense(d_model, activation='relu', name=next(names))(decoder_sublayer2)
+            decoder_sublayer3 = Dense(d_model, name=next(names))(decoder_sublayer3)
+            decoder_sublayer3 = Add(name=next(names))([decoder_sublayer2, decoder_sublayer3])
+            decoder_sublayer3 = LayerNormalization(name=next(names))(decoder_sublayer3)
+            # output of layer becomes input of next layer
+            decoder_layer_input = decoder_sublayer3
+        # finally stack a linear transformation with softmax activation
+        # to get next token probabilities
+        # decoder = final_transformation(decoder_sublayer3)
+        # decoder = Softmax()(decoder)
+        decoder = Dense(self.vocab_size, activation='softmax', name='decoder_output')(decoder_sublayer3)
+        return decoder
 
 
 def init_cli():
@@ -320,23 +340,27 @@ if __name__ == '__main__':
     cli = init_cli()
     DEBUG = cli.debug
 
-    encoder, decoder = init_model(
+    model = Transformer(
         n_heads=n_heads, encoder_layers=encoder_layers,
         decoder_layers=decoder_layers, d_model=d_model, vocab_size=vocab_size,
         sequence_len=sequence_len)
 
     if cli.summarize_models or cli.summarize_encoder:
         print('ENCODER SUMMARY')
-        encoder.summary(line_length=100)
+        model.encoder_model.summary(line_length=100)
     if cli.summarize_models or cli.summarize_decoder:
         print('DECODER SUMMARY')
-        decoder.summary(line_length=100)
+        model.decoder_model.summary(line_length=100)
     if cli.plot_models or cli.plot_encoder:
-        keras.utils.plot_model(encoder, 'encoder.dot')
+        keras.utils.plot_model(model.encoder_model, 'encoder.dot')
+        sp.call(['dot', '-Tpng', 'encoder.dot', '-o', 'encoder.png'])
+        sp.call(['open', 'encoder.png'])
     if cli.plot_models or cli.plot_encoder:
-        keras.utils.plot_model(decoder, 'decoder.dot')
+        keras.utils.plot_model(model.decoder_model, 'decoder.dot')
+        sp.call(['dot', '-Tpng', 'decoder.dot', '-o', 'decoder.png'])
+        sp.call(['open', 'decoder.png'])
 
     if cli.train:
-        x, x, y, vocab_size = training_data(sequence_len)
-        decoder.compile(loss='categorical_crossentropy', optimizer='adam')
-        decoder.fit([x, x], y, batch_size=30, epochs=1)
+        x, y, vocab_size = training_data(sequence_len)
+        model.compile(loss='categorical_crossentropy', optimizer='adam')
+        model.fit([x, x], y, batch_size=30, epochs=1)
