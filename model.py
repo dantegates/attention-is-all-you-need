@@ -94,7 +94,7 @@ class Attention(Layer):
         k_p = K.dot(k, self.W_k)
         k_v = K.dot(v, self.W_v)
         k_t = K.permute_dimensions(K.transpose(k_p), (2, 0, 1))
-        weights = K.batch_dot(q_p, k_t) / self.scalar
+        weights = K.batch_dot(q_p, k_t) / K.variable(self.scalar)
         if masking:
             debug('masking')
             weights = self.mask(weights)
@@ -314,7 +314,7 @@ if __name__ == '__main__':
     n_heads = 8
     encoder_layers = decoder_layers = 6
     d_model = 64 * n_heads
-    vocab_size = 27
+    vocab_size = 32
     sequence_len = 30
     test_sequence_len = 100
     cli = init_cli()
