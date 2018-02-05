@@ -288,7 +288,7 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
     # to get next token probabilities
     # decoder = final_transformation(decoder_sublayer3)
     # decoder = Softmax()(decoder)
-    decoder = Dense(vocab_size, activation='softmax')(decoder_sublayer3)
+    decoder = Dense(vocab_size, activation='softmax', name='decoder_output')(decoder_sublayer3)
     decoder_model = Model(inputs=[encoder_input, decoder_input], outputs=decoder)
 
     return encoder_model, decoder_model
