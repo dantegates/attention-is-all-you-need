@@ -14,7 +14,7 @@ import numpy as np
 from data import training_data
 from keras import backend as K
 from keras import activations
-from keras.engine.topology import Layer
+from keras.engine.topology import Layer, InputSpec
 from keras.initializers import RandomNormal
 from keras.layers import Add, Dense, Embedding, Input, Lambda
 from keras.layers.advanced_activations import Softmax
@@ -245,6 +245,8 @@ class PositionalEncoding(Layer):
 class FFN(Layer):
     def __init__(self, **kwargs):
         self.activation = activations.get('relu')
+        self.bias_regularizer = None
+        self.bias_constraint = None
         super().__init__(**kwargs)
 
     def build(self, input_shape):
@@ -332,7 +334,7 @@ if __name__ == '__main__':
     import sys
 
     n_heads = 8
-    encoder_layers = decoder_layers = 6
+    encoder_layers = decoder_layers = 2
     d_model = 64 * n_heads
     vocab_size = 32
     sequence_len = 30
