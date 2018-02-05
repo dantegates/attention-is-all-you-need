@@ -214,7 +214,7 @@ class Attention(Layer):
         assert shape[1] == shape[2], 'expected square matrix'
         mask = np.zeros((shape[1], shape[1]))
         invalid_indices = np.triu_indices(shape[1], 1)
-        mask[invalid_indices] = -np.inf
+        mask[invalid_indices] = 1e-11
         mask = K.variable(mask)
         return x + mask
 
