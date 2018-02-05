@@ -24,6 +24,8 @@ from keras.models import Model
 # - share embedding weights with final linear transformation
 # - dropout
 # - learning rate decay during train
+# - Model class
+# - proper logging
 
 
 DEBUG = False
