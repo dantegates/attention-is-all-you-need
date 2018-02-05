@@ -4,27 +4,27 @@ Implementation of Transformer model, as described here
     https://arxiv.org/pdf/1706.03762.pdf
 """
 
-from __future__ import division, print_function, absolute_import
+from __future__ import absolute_import, division, print_function
 
 import argparse
 
 import keras
 import numpy as np
+from data import training_data
 from keras import backend as K
 from keras import activations
 from keras.engine.topology import Layer
 from keras.initializers import RandomNormal
-from keras.layers import Dense, Embedding, Input, Add, Lambda
+from keras.layers import Add, Dense, Embedding, Input, Lambda
+from keras.layers.advanced_activations import Softmax
 from keras.models import Model
-
-from data import training_data
-
 
 # TODO:
 # - Mask decoder
-# - rename d_model to output_shape
 # - share embedding weights with final linear transformation
 # - dropout
+# - learning rate decay during train
+# - self! attention
 
 
 DEBUG = False
@@ -34,42 +34,37 @@ def debug(*args, **kwargs):
 
 
 class MultiHeadAttention(Layer):
-    def __init__(self, h, d_model, **kwargs):
+    def __init__(self, n_heads, d_model, **kwargs):
         # activation = comparison
         debug('init MultiHeadAttention')
-        self.h = h
+        self.n_heads = n_heads
         self.d_model = d_model
-        assert self.d_model % h == 0, 'h must divide d_model evenly'
-        self.d_k = self.d_v = int(self.d_model / h)
+        assert self.d_model % n_heads == 0, 'h must divide d_model evenly'
+        self.d_k = self.d_v = self.d_model // n_heads
         super().__init__(**kwargs)
         
     def build(self, input_shape):
-        debug('building MultiAttentionHead')
-        self.k = self.add_weight(name='k', 
-                                 shape=(1, self.d_model),
-                                 initializer='uniform',
-                                 trainable=True)
-        self.v = self.add_weight(name='v', 
-                                 shape=(1, self.d_model),
-                                 initializer='uniform',
-                                 trainable=True)
+        debug('building MultiAttention')
         self.W_o = self.add_weight(name='W_o', 
-                                   shape=(self.h*self.d_v, self.d_model),
+                                   shape=(self.n_heads*self.d_v, self.d_model),
                                    initializer='uniform',
                                    trainable=True)
-        self.heads = [AttentionHead(self.d_model, self.d_k, self.d_v, activation='softmax')
-                      for _ in range(self.h)]
+        self.heads = [Attention(self.d_model, self.d_k, self.d_v, activation='softmax')
+                      for _ in range(self.n_heads)]
         super().build(input_shape)
     
-    def call(self, q):
-        concat = K.concatenate([head(q, k=self.k, v=self.v) for head in self.heads])
+    def call(self, q, k, v):
+        concat = K.concatenate([head(q, k=k, v=v) for head in self.heads])
         debug('concat shape', K.int_shape(concat))
         return K.dot(concat, self.W_o)
 
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[1], self.d_model)
 
-class AttentionHead(Layer):
+
+class Attention(Layer):
     def __init__(self, d_model, d_k, d_v, activation, masking=False, **kwargs):
-        debug('init AttentionHead') 
+        debug('init Attention') 
         self.d_model = d_model
         self.d_k = d_k
         self.d_v = d_v
@@ -80,27 +75,29 @@ class AttentionHead(Layer):
 
     def build(self, input_shape):
         self.W_q = self.add_weight(name='W_q',
-                                   shape=(self.d_model, self.d_k),
+                                   shape=(input_shape[-1], self.d_k),
                                    initializer=RandomNormal(mean=0.0, stddev=1.0),
                                    trainable=True)
         self.W_k = self.add_weight(name='W_k',
-                                   shape=(self.d_model, self.d_k),
+                                   shape=(input_shape[-1], self.d_k),
                                    initializer=RandomNormal(mean=0.0, stddev=1.0),
                                    trainable=True)
         self.W_v = self.add_weight(name='W_v',
-                                   shape=(self.d_model, self.d_k),
+                                   shape=(input_shape[-1], self.d_v),
                                    initializer=RandomNormal(mean=0.0, stddev=1.0),
                                    trainable=True)
         super().build(input_shape)
 
     def call(self, q, k, v):
-        q_proj = K.dot(q, self.W_q)
-        k_proj = K.dot(k, self.W_k)
-        v_proj = K.dot(v, self.W_v)
-        value_weights = \
-            self.activation(K.dot(q_proj, K.transpose(k_proj)) / self.scalar)
-        debug('value weights shape', K.int_shape(value_weights))
-        return K.dot(value_weights, v_proj)
+        q_p = K.dot(q, self.W_q)
+        k_p = K.dot(k, self.W_k)
+        k_v = K.dot(v, self.W_v)
+        k_t = K.permute_dimensions(K.transpose(k_p), (2, 0, 1))
+        weights = K.batch_dot(q_p, k_t) / self.scalar
+        return K.batch_dot(weights, k_v)
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[-1], self.d_v)
 
 
 class PositionalEncoding(Layer):
@@ -118,6 +115,56 @@ class PositionalEncoding(Layer):
                 yield f(np.arange(sequence_len) / ((10000**(2*i/d_model))))
         arr = np.array(list(gen())).transpose()
         return K.variable(arr)
+
+    def output_shape(self, input_shape):
+        return input_shape
+
+
+class FFN(Layer):
+    def __init__(self, **kwargs):
+        self.activation = activations.get('relu')
+        super().__init__(**kwargs)
+
+    def build(self, input_shape):
+        input_dim = input_shape[-1]
+
+        self.kernel1 = self.add_weight(shape=(input_dim, self.units),
+                                       initializer='glorot_uniform',
+                                       name='kernel1',
+                                       regularizer=None,
+                                       constraint=None,
+                                       trainable=True)
+        self.bias1 = self.add_weight(shape=(self.units,),
+                                     initializer='zeros',
+                                     name='bias1',
+                                     regularizer=self.bias_regularizer,
+                                     constraint=self.bias_constraint,
+                                     trainable=True)
+        self.kernel2 = self.add_weight(shape=(input_dim, self.units),
+                                       initializer='glorot_uniform',
+                                       name='kernel2',
+                                       regularizer=None,
+                                       constraint=None,
+                                       trainable=True)
+        self.bias2 = self.add_weight(shape=(self.units,),
+                                     initializer='zeros',
+                                     name='bias2',
+                                     regularizer=self.bias_regularizer,
+                                     constraint=self.bias_constraint,
+                                     trainable=True)
+        self.input_spec = InputSpec(min_ndim=2, axes={-1: input_dim})
+        super().build(input_shape)
+
+    def call(self, x):
+        output = self.activation(K.bias_add(K.dot(x, self.kernel1), self.bias1))
+        return K.bias_add(K.dot(output, self.kernel2), self.bias2)
+
+    def compute_output_shape(self, input_shape):
+        assert input_shape and len(input_shape) >= 2
+        assert input_shape[-1]
+        output_shape = list(input_shape)
+        output_shape[-1] = self.units
+        return tuple(output_shape)
 
 
 class LayerNormalization(Layer):
@@ -145,12 +192,15 @@ class LayerNormalization(Layer):
         return input_shape
 
 
-def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size, sequence_len):
+def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
+               sequence_len, n_outputs=None):
 
     # create embedding and model inputs
     embedding = Embedding(input_dim=vocab_size, output_dim=d_model,
                           input_length=sequence_len, name='embedding')
-    embedding_scalar = Lambda(lambda x: x*np.sqrt(d_model), name='embedding_scalar')
+    embedding_scalar = Lambda(lambda x: x*np.sqrt(d_model),
+                              output_shape=lambda x: x,
+                              name='embedding_scalar')
     positional_encoding = PositionalEncoding(d_model, sequence_len)
 
     encoder_input = Input(shape=(None,), name='encoder_input')
@@ -158,12 +208,16 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size, seq
     encoder_embedding = positional_encoding(encoder_embedding)
     encoder_embedding = embedding_scalar(encoder_embedding)
 
+    # shared_weights = embedding.embeddings
+    # final_transformation = Lambda(lambda x: K.dot(K.transpose(shared_weights), x))
+
     decoder_input = Input(shape=(None,), name='decoder_input')
     decoder_embedding = embedding(decoder_input)
     decoder_embedding = positional_encoding(decoder_embedding)
     decoder_embedding = embedding_scalar(decoder_embedding)
 
     # make encoder
+    debug('making encoder')
     encoder_layer_input = encoder_embedding
     for i in range(1, encoder_layers+1):
         names = iter([
@@ -175,7 +229,8 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size, seq
             'encoder_layer%s_residual2' % i,
             'encoder_layer%s_layernorm2' % i,
         ])
-        encoder = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(encoder_layer_input)
+        encoder = MultiHeadAttention(n_heads=n_heads, d_model=d_model, name=next(names))
+        encoder = encoder(encoder_layer_input, k=encoder_layer_input, v=encoder_layer_input)
         encoder_sublayer1 = Add(name=next(names))([encoder_layer_input, encoder])
         encoder_sublayer1 = LayerNormalization(name=next(names))(encoder_sublayer1)
         encoder_sublayer2 = Dense(d_model, activation='relu', name=next(names))(encoder_sublayer1)
@@ -188,6 +243,7 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size, seq
 
     # make decoder
     decoder_layer_input = decoder_embedding
+    debug('making decoder')
     for i in range(1, decoder_layers+1):
         names = iter([
             'decoder_layer%s_mha1' % i,
@@ -201,10 +257,12 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size, seq
             'decoder_layer%s_residual3' % i,
             'decoder_layer%s_layernorm3' % i,
         ])
-        decoder_sublayer1 = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(decoder_layer_input)
+        decoder_sublayer1 = MultiHeadAttention(n_heads=n_heads, d_model=d_model, name=next(names))
+        decoder_sublayer1 = decoder_sublayer1(decoder_layer_input, k=decoder_layer_input, v=decoder_layer_input)
         decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
         decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
-        decoder_sublayer2 = MultiHeadAttention(h=n_heads, d_model=d_model, name=next(names))(encoder)
+        decoder_sublayer2 = MultiHeadAttention(n_heads=n_heads, d_model=d_model, name=next(names))
+        decoder_sublayer2 = decoder_sublayer2(decoder_sublayer1, k=encoder, v=encoder)
         decoder_sublayer2 = Add(name=next(names))([decoder_sublayer1, decoder_sublayer2])
         decoder_sublayer2 = LayerNormalization(name=next(names))(decoder_sublayer2)
         decoder_sublayer3 = Dense(d_model, activation='relu', name=next(names))(decoder_sublayer2)
@@ -215,6 +273,8 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size, seq
         decoder_layer_input = decoder_sublayer3
     # finally stack a linear transformation with softmax activation
     # to get next token probabilities
+    # decoder = final_transformation(decoder_sublayer3)
+    # decoder = Softmax()(decoder)
     decoder = Dense(vocab_size, activation='softmax')(decoder_sublayer3)
     decoder_model = Model(inputs=[encoder_input, decoder_input], outputs=decoder)
 
@@ -241,7 +301,7 @@ if __name__ == '__main__':
     n_heads = 8
     encoder_layers = decoder_layers = 6
     d_model = 64 * n_heads
-    vocab_size = 30
+    vocab_size = 27
     sequence_len = 30
     test_sequence_len = 100
     cli = init_cli()
@@ -264,7 +324,6 @@ if __name__ == '__main__':
         keras.utils.plot_model(decoder, 'decoder.dot')
 
     if cli.train:
-        x, x, y = training_data(sequence_len)
+        x, x, y, vocab_size = training_data(sequence_len)
         decoder.compile(loss='categorical_crossentropy', optimizer='adam')
         decoder.fit([x, x], y, batch_size=30, epochs=1)
-
