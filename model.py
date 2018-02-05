@@ -24,7 +24,6 @@ from keras.models import Model
 # - share embedding weights with final linear transformation
 # - dropout
 # - learning rate decay during train
-# - self! attention
 
 
 DEBUG = False
@@ -34,13 +33,14 @@ def debug(*args, **kwargs):
 
 
 class MultiHeadAttention(Layer):
-    def __init__(self, n_heads, d_model, **kwargs):
+    def __init__(self, n_heads, d_model, masking=False, **kwargs):
         # activation = comparison
         debug('init MultiHeadAttention')
         self.n_heads = n_heads
         self.d_model = d_model
         assert self.d_model % n_heads == 0, 'h must divide d_model evenly'
         self.d_k = self.d_v = self.d_model // n_heads
+        self.masking = masking
         super().__init__(**kwargs)
         
     def build(self, input_shape):
@@ -54,7 +54,7 @@ class MultiHeadAttention(Layer):
         super().build(input_shape)
     
     def call(self, q, k, v):
-        concat = K.concatenate([head(q, k=k, v=v) for head in self.heads])
+        concat = K.concatenate([head(q, k=k, v=v, masking=self.masking) for head in self.heads])
         debug('concat shape', K.int_shape(concat))
         return K.dot(concat, self.W_o)
 
@@ -63,14 +63,13 @@ class MultiHeadAttention(Layer):
 
 
 class Attention(Layer):
-    def __init__(self, d_model, d_k, d_v, activation, masking=False, **kwargs):
+    def __init__(self, d_model, d_k, d_v, activation, **kwargs):
         debug('init Attention') 
         self.d_model = d_model
         self.d_k = d_k
         self.d_v = d_v
         self.scalar = np.sqrt(self.d_k)
         self.activation = activations.get(activation)
-        self.masking = masking
         super().__init__(**kwargs)
 
     def build(self, input_shape):
@@ -88,13 +87,25 @@ class Attention(Layer):
                                    trainable=True)
         super().build(input_shape)
 
-    def call(self, q, k, v):
+    def call(self, q, k, v, masking=False):
         q_p = K.dot(q, self.W_q)
         k_p = K.dot(k, self.W_k)
         k_v = K.dot(v, self.W_v)
         k_t = K.permute_dimensions(K.transpose(k_p), (2, 0, 1))
         weights = K.batch_dot(q_p, k_t) / self.scalar
+        if masking:
+            debug('masking')
+            weights = self.mask(weights)
         return K.batch_dot(weights, k_v)
+
+    def mask(self, x):
+        shape = K.int_shape(x)
+        assert shape[1] == shape[2], 'expected square matrix'
+        mask = np.zeros((shape[1], shape[1]))
+        invalid_indices = np.triu_indices(shape[1], 1)
+        mask[invalid_indices] = -np.inf
+        mask = K.variable(mask)
+        return x + mask
 
     def compute_output_shape(self, input_shape):
         return (input_shape[-1], self.d_v)
@@ -116,7 +127,7 @@ class PositionalEncoding(Layer):
         arr = np.array(list(gen())).transpose()
         return K.variable(arr)
 
-    def output_shape(self, input_shape):
+    def compute_output_shape(self, input_shape):
         return input_shape
 
 
@@ -257,7 +268,7 @@ def init_model(n_heads, encoder_layers, decoder_layers, d_model, vocab_size,
             'decoder_layer%s_residual3' % i,
             'decoder_layer%s_layernorm3' % i,
         ])
-        decoder_sublayer1 = MultiHeadAttention(n_heads=n_heads, d_model=d_model, name=next(names))
+        decoder_sublayer1 = MultiHeadAttention(n_heads=n_heads, d_model=d_model, masking=True, name=next(names))
         decoder_sublayer1 = decoder_sublayer1(decoder_layer_input, k=decoder_layer_input, v=decoder_layer_input)
         decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
         decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
