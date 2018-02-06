@@ -19,15 +19,16 @@ You're gonna carry that weight along time
 
 
 def training_data(max_len):
-    chars = sorted(set(text))
+    tokens = ['<start>']*max_len + list(text) + ['<end>']
+    chars = sorted(set(tokens))
     vocab_size = len(chars)
     char_indices = dict((c, i) for i, c in enumerate(chars))
     indices_char = dict((i, c) for i, c in enumerate(chars))
     sentences = []
     next_chars = []
-    for i in range(0, len(text) - max_len):
-        sentences.append(text[i:i+max_len])
-        next_chars.append(text[i+1:max_len+1])
+    for i in range(0, len(tokens) - max_len):
+        sentences.append(tokens[i:i+max_len])
+        next_chars.append(tokens[i+1:max_len+1])
     x = np.zeros((len(sentences), max_len), dtype=np.int64)
     y = np.zeros((len(sentences), max_len, vocab_size+1))
     for i, s in enumerate(sentences):
