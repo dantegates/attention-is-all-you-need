@@ -335,13 +335,10 @@ class LayerNormalization(Layer):
 
 def init_cli():
     parser = argparse.ArgumentParser('debug interface to attention is all you need model')
-    parser.add_argument('--summarize-models', action='store_true', default=False)
+    parser.add_argument('--summarize-model', action='store_true', default=False)
     parser.add_argument('--summarize-encoder', action='store_true', default=False)
-    parser.add_argument('--summarize-decoder', action='store_true', default=False)
-    parser.add_argument('--plot-models', action='store_true', default=False)
     parser.add_argument('--plot-model', action='store_true', default=False)
     parser.add_argument('--plot-encoder', action='store_true', default=False)
-    parser.add_argument('--plot-decoder', action='store_true', default=False)
     parser.add_argument('--train', action='store_true', default=False)
     parser.add_argument('--debug', action='store_true', default=False)
     cli = parser.parse_args(sys.argv[1:])
@@ -365,21 +362,17 @@ if __name__ == '__main__':
         decoder_layers=decoder_layers, d_model=d_model, vocab_size=vocab_size,
         sequence_len=sequence_len)
 
-    if cli.summarize_models or cli.summarize_encoder:
+    if cli.summarize_encoder:
         print('ENCODER SUMMARY')
         model.encoder_model.summary(line_length=100)
-    if cli.summarize_models or cli.summarize_decoder:
-        print('DECODER SUMMARY')
-        model.decoder_model.summary(line_length=100)
-    if cli.plot_models or cli.plot_encoder:
+    if cli.summarize_model:
+        print('MODEL SUMMARY')
+        model.summary(line_length=100)
+    if cli.plot_encoder:
         keras.utils.plot_model(model.encoder_model, 'encoder.dot')
         sp.call(['dot', '-Tpng', 'encoder.dot', '-o', 'encoder.png'])
         sp.call(['open', 'encoder.png'])
-    if cli.plot_models or cli.plot_decoder:
-        keras.utils.plot_model(model.decoder_model, 'decoder.dot')
-        sp.call(['dot', '-Tpng', 'decoder.dot', '-o', 'decoder.png'])
-        sp.call(['open', 'decoder.png'])
-    if cli.plot_models or cli.plot_model:
+    if cli.plot_model:
         keras.utils.plot_model(model, 'model.dot')
         sp.call(['dot', '-Tpng', 'model.dot', '-o', 'model.png'])
         sp.call(['open', 'model.png'])
