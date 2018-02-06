@@ -1,14 +1,13 @@
-from keras.callbacks import LambdaCallback
 import numpy as np
-
-from model import Transformer
 from data import BEATLES
-
+from keras.callbacks import LambdaCallback, LearningRateScheduler
+from model import Transformer
 
 n_heads = 8
-encoder_layers = decoder_layers = 8
+encoder_layers = decoder_layers = 2
 d_model = 64 * n_heads
-sequence_len = 15
+sequence_len = 10
+warmup_steps = 40
 
 training_data = BEATLES(max_len=sequence_len)
 x, y = training_data.x, training_data.y
@@ -34,7 +33,15 @@ def generate_text(epoch, logs):
         text += training_data.idx_map[next_idx]
     print(text)
 
-cb = LambdaCallback(on_epoch_end=generate_text)
-model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
-model.fit([x, x], y, batch_size=30, epochs=100, callbacks=[cb])
+def lr_schedule(epoch):
+    epoch += 1
+    lr = d_model**-.5 * min(epoch**-.5, epoch*warmup_steps**-1.5)
+    return lr
+
+callbacks = []
+callbacks.append(LambdaCallback(on_epoch_end=generate_text))
+callbacks.append(LearningRateScheduler(lr_schedule))
+
+model.compile(loss='categorical_crossentropy', optimizer='adam')
+model.fit([x, x], y, batch_size=30, epochs=100, callbacks=callbacks)
 model.save('model.h5')
