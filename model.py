@@ -16,7 +16,7 @@ from keras import backend as K
 from keras import activations
 from keras.engine.topology import Layer, InputSpec
 from keras.initializers import RandomNormal
-from keras.layers import Add, Dense, Embedding, Input, Lambda
+from keras.layers import Add, Dense, Embedding, Input, Lambda, Dot
 from keras.layers.advanced_activations import Softmax
 from keras.models import Model
 
@@ -48,7 +48,6 @@ class Transformer(Model):
         self.encoder = self.init_encoder()
         self.decoder = self.init_decoder()
         self.encoder_model = Model(self.encoder_input, self.encoder)
-        self.decoder_model = Model(self.decoder_input, self.decoder)
         super().__init__(inputs=[self.encoder_input, self.decoder_input],
                          outputs=self.decoder)
 
@@ -90,7 +89,6 @@ class Transformer(Model):
                 'encoder_layer%s_layernorm2' % i,
             ])
             encoder = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model,
-                                         k=encoder_layer_input, v=encoder_layer_input, 
                                          name=next(names))
             encoder = encoder(encoder_layer_input)
             encoder_sublayer1 = Add(name=next(names))([encoder_layer_input, encoder])
@@ -121,14 +119,12 @@ class Transformer(Model):
                 'decoder_layer%s_layernorm3' % i,
             ])
             decoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model,
-                                                   k=decoder_layer_input, v=decoder_layer_input,
                                                    masking=True, name=next(names))
             decoder_sublayer1 = decoder_sublayer1(decoder_layer_input)
             decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
             decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
-            decoder_sublayer2 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model,
-                                                   k=self.encoder, v=self.encoder, name=next(names))
-            decoder_sublayer2 = decoder_sublayer2(decoder_sublayer1)
+            decoder_sublayer2 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, name=next(names))
+            decoder_sublayer2 = decoder_sublayer2(self.encoder, q=decoder_sublayer1, v=self.encoder)
             decoder_sublayer2 = Add(name=next(names))([decoder_sublayer1, decoder_sublayer2])
             decoder_sublayer2 = LayerNormalization(name=next(names))(decoder_sublayer2)
             decoder_sublayer3 = Dense(self.d_model, activation='relu', name=next(names))(decoder_sublayer2)
@@ -146,13 +142,11 @@ class Transformer(Model):
 
 
 class MultiHeadAttention(Layer):
-    def __init__(self, n_heads, d_model, k, v, masking=False, **kwargs):
+    def __init__(self, n_heads, d_model, masking=False, **kwargs):
         # activation = comparison
         debug('init MultiHeadAttention')
         self.n_heads = n_heads
         self.d_model = d_model
-        self.k = k
-        self.v = v
         assert self.d_model % n_heads == 0, 'h must divide d_model evenly'
         self.d_k = self.d_v = self.d_model // n_heads
         self.masking = masking
@@ -164,13 +158,17 @@ class MultiHeadAttention(Layer):
                                    shape=(self.n_heads*self.d_v, self.d_model),
                                    initializer='uniform',
                                    trainable=True)
-        self.heads = [Attention(d_model=self.d_model, d_k=self.d_k, d_v=self.d_v, k=self.k,
-                                v=self.v, activation='softmax')
+        self.heads = [Attention(d_model=self.d_model, d_k=self.d_k, d_v=self.d_v, activation='softmax')
                       for _ in range(self.n_heads)]
         super().build(input_shape)
     
-    def call(self, q):
-        concat = K.concatenate([head(q, masking=self.masking) for head in self.heads])
+    # this signature is a hack to work with keras layers call only adding
+    # a single position tensor to the graph (causes problems in encoder-decoder
+    # attention)
+    def call(self, k, q=None, v=None):
+        if q is None and v is None:
+            q = v = k    
+        concat = K.concatenate([head(q, k=k, v=v, masking=self.masking) for head in self.heads])
         debug('concat shape', K.int_shape(concat))
         return K.dot(concat, self.W_o)
 
@@ -179,13 +177,11 @@ class MultiHeadAttention(Layer):
 
 
 class Attention(Layer):
-    def __init__(self, d_model, k, v, d_k, d_v, activation, **kwargs):
+    def __init__(self, d_model, d_k, d_v, activation, **kwargs):
         debug('init Attention') 
         self.d_model = d_model
         self.d_k = d_k
         self.d_v = d_v
-        self.k = k
-        self.v = v
         self.scalar = np.sqrt(self.d_k)
         self.activation = activations.get(activation)
         super().__init__(**kwargs)
@@ -205,11 +201,12 @@ class Attention(Layer):
                                    trainable=True)
         super().build(input_shape)
 
-    def call(self, q, masking=False):
+    def call(self, q, k, v, masking=False):
         q_p = K.dot(q, self.W_q)
-        k_p = K.dot(self.k, self.W_k)
-        k_v = K.dot(self.v, self.W_v)
+        k_p = K.dot(k, self.W_k)
+        k_v = K.dot(v, self.W_v)
         k_t = K.permute_dimensions(K.transpose(k_p), (2, 0, 1))
+        dot = Dot(axes=(1, 2))
         weights = K.batch_dot(q_p, k_t) / K.variable(self.scalar)
         if masking:
             debug('masking')
@@ -378,7 +375,7 @@ if __name__ == '__main__':
         keras.utils.plot_model(model.encoder_model, 'encoder.dot')
         sp.call(['dot', '-Tpng', 'encoder.dot', '-o', 'encoder.png'])
         sp.call(['open', 'encoder.png'])
-    if cli.plot_models or cli.plot_encoder:
+    if cli.plot_models or cli.plot_decoder:
         keras.utils.plot_model(model.decoder_model, 'decoder.dot')
         sp.call(['dot', '-Tpng', 'decoder.dot', '-o', 'decoder.png'])
         sp.call(['open', 'decoder.png'])
