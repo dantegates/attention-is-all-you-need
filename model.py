@@ -253,8 +253,9 @@ class Scalar(Layer):
 
 
 class FFN(Layer):
-    def __init__(self, **kwargs):
-        self.activation = activations.get('relu')
+    def __init__(self, units, activation, **kwargs):
+        self.units = units
+        self.activation = activations.get(activation)
         self.bias_regularizer = None
         self.bias_constraint = None
         super().__init__(**kwargs)
