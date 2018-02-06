@@ -25,8 +25,7 @@ from keras.models import Model
 # - dropout
 # - learning rate decay during train
 # - proper logging
-# - do away with Lambdas
-# - saving model
+# - keyword only arguments
 
 
 DEBUG = False
@@ -90,8 +89,10 @@ class Transformer(Model):
                 'encoder_layer%s_residual2' % i,
                 'encoder_layer%s_layernorm2' % i,
             ])
-            encoder = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, name=next(names))
-            encoder = encoder(encoder_layer_input, k=encoder_layer_input, v=encoder_layer_input)
+            encoder = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model,
+                                         k=encoder_layer_input, v=encoder_layer_input, 
+                                         name=next(names))
+            encoder = encoder(encoder_layer_input)
             encoder_sublayer1 = Add(name=next(names))([encoder_layer_input, encoder])
             encoder_sublayer1 = LayerNormalization(name=next(names))(encoder_sublayer1)
             encoder_sublayer2 = Dense(self.d_model, activation='relu', name=next(names))(encoder_sublayer1)
@@ -119,12 +120,15 @@ class Transformer(Model):
                 'decoder_layer%s_residual3' % i,
                 'decoder_layer%s_layernorm3' % i,
             ])
-            decoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, masking=True, name=next(names))
-            decoder_sublayer1 = decoder_sublayer1(decoder_layer_input, k=decoder_layer_input, v=decoder_layer_input)
+            decoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model,
+                                                   k=decoder_layer_input, v=decoder_layer_input,
+                                                   masking=True, name=next(names))
+            decoder_sublayer1 = decoder_sublayer1(decoder_layer_input)
             decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
             decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
-            decoder_sublayer2 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, name=next(names))
-            decoder_sublayer2 = decoder_sublayer2(decoder_sublayer1, k=self.encoder, v=self.encoder)
+            decoder_sublayer2 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model,
+                                                   k=self.encoder, v=self.encoder, name=next(names))
+            decoder_sublayer2 = decoder_sublayer2(decoder_sublayer1)
             decoder_sublayer2 = Add(name=next(names))([decoder_sublayer1, decoder_sublayer2])
             decoder_sublayer2 = LayerNormalization(name=next(names))(decoder_sublayer2)
             decoder_sublayer3 = Dense(self.d_model, activation='relu', name=next(names))(decoder_sublayer2)
@@ -142,11 +146,13 @@ class Transformer(Model):
 
 
 class MultiHeadAttention(Layer):
-    def __init__(self, n_heads, d_model, masking=False, **kwargs):
+    def __init__(self, n_heads, d_model, k, v, masking=False, **kwargs):
         # activation = comparison
         debug('init MultiHeadAttention')
         self.n_heads = n_heads
         self.d_model = d_model
+        self.k = k
+        self.v = v
         assert self.d_model % n_heads == 0, 'h must divide d_model evenly'
         self.d_k = self.d_v = self.d_model // n_heads
         self.masking = masking
@@ -158,12 +164,13 @@ class MultiHeadAttention(Layer):
                                    shape=(self.n_heads*self.d_v, self.d_model),
                                    initializer='uniform',
                                    trainable=True)
-        self.heads = [Attention(self.d_model, self.d_k, self.d_v, activation='softmax')
+        self.heads = [Attention(d_model=self.d_model, d_k=self.d_k, d_v=self.d_v, k=self.k,
+                                v=self.v, activation='softmax')
                       for _ in range(self.n_heads)]
         super().build(input_shape)
     
-    def call(self, q, k, v):
-        concat = K.concatenate([head(q, k=k, v=v, masking=self.masking) for head in self.heads])
+    def call(self, q):
+        concat = K.concatenate([head(q, masking=self.masking) for head in self.heads])
         debug('concat shape', K.int_shape(concat))
         return K.dot(concat, self.W_o)
 
@@ -172,11 +179,13 @@ class MultiHeadAttention(Layer):
 
 
 class Attention(Layer):
-    def __init__(self, d_model, d_k, d_v, activation, **kwargs):
+    def __init__(self, d_model, k, v, d_k, d_v, activation, **kwargs):
         debug('init Attention') 
         self.d_model = d_model
         self.d_k = d_k
         self.d_v = d_v
+        self.k = k
+        self.v = v
         self.scalar = np.sqrt(self.d_k)
         self.activation = activations.get(activation)
         super().__init__(**kwargs)
@@ -196,10 +205,10 @@ class Attention(Layer):
                                    trainable=True)
         super().build(input_shape)
 
-    def call(self, q, k, v, masking=False):
+    def call(self, q, masking=False):
         q_p = K.dot(q, self.W_q)
-        k_p = K.dot(k, self.W_k)
-        k_v = K.dot(v, self.W_v)
+        k_p = K.dot(self.k, self.W_k)
+        k_v = K.dot(self.v, self.W_v)
         k_t = K.permute_dimensions(K.transpose(k_p), (2, 0, 1))
         weights = K.batch_dot(q_p, k_t) / K.variable(self.scalar)
         if masking:
