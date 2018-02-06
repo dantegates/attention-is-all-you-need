@@ -29,7 +29,7 @@ def training_data(max_len):
         sentences.append(text[i:i+max_len])
         next_chars.append(text[i+1:max_len+1])
     x = np.zeros((len(sentences), max_len), dtype=np.int64)
-    y = np.zeros((len(sentences), max_len, vocab_size+1), dtype=np.int64)
+    y = np.zeros((len(sentences), max_len, vocab_size+1))
     for i, s in enumerate(sentences):
         for t, char in enumerate(s):
             x[i, t] = char_indices[char]
