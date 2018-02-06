@@ -15,13 +15,12 @@ from keras import backend as K
 from keras import activations
 from keras.engine.topology import Layer, InputSpec
 from keras.initializers import RandomNormal
-from keras.layers import Add, Dense, Embedding, Input, Lambda, Dot
+from keras.layers import Add, Dense, Embedding, Input, Dropout
 from keras.layers.advanced_activations import Softmax
 from keras.models import Model
 
 # TODO:
 # - share embedding weights with final linear transformation
-# - dropout
 # - learning rate decay during train
 # - proper logging
 # - keyword only arguments
@@ -87,13 +86,14 @@ class Transformer(Model):
                 'encoder_layer%s_residual2' % i,
                 'encoder_layer%s_layernorm2' % i,
             ])
-            encoder = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model,
-                                         name=next(names))
-            encoder = encoder(encoder_layer_input)
-            encoder_sublayer1 = Add(name=next(names))([encoder_layer_input, encoder])
+            encoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, name=next(names))
+            encoder_sublayer1 = encoder_sublayer1(encoder_layer_input)
+            encoder_sublayer1 = Dropout(0.1)(encoder_sublayer1)
+            encoder_sublayer1 = Add(name=next(names))([encoder_layer_input, encoder_sublayer1])
             encoder_sublayer1 = LayerNormalization(name=next(names))(encoder_sublayer1)
             encoder_sublayer2 = Dense(self.d_model, activation='relu', name=next(names))(encoder_sublayer1)
             encoder_sublayer2 = Dense(self.d_model, name=next(names))(encoder_sublayer2)
+            encoder_sublayer2 = Dropout(0.1)(encoder_sublayer2)
             encoder_sublayer2 = Add(name=next(names))([encoder_sublayer1, encoder_sublayer2])
             encoder_sublayer2 = LayerNormalization(name=next(names))(encoder_sublayer2)
             encoder_layer_input = encoder_sublayer2
@@ -120,14 +120,17 @@ class Transformer(Model):
             decoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model,
                                                    masking=True, name=next(names))
             decoder_sublayer1 = decoder_sublayer1(decoder_layer_input)
+            decoder_sublayer1 = Dropout(0.1)(decoder_sublayer1)
             decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
             decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
             decoder_sublayer2 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, name=next(names))
             decoder_sublayer2 = decoder_sublayer2(self.encoder, q=decoder_sublayer1, v=self.encoder)
+            decoder_sublayer2 = Dropout(0.1)(decoder_sublayer2)
             decoder_sublayer2 = Add(name=next(names))([decoder_sublayer1, decoder_sublayer2])
             decoder_sublayer2 = LayerNormalization(name=next(names))(decoder_sublayer2)
             decoder_sublayer3 = Dense(self.d_model, activation='relu', name=next(names))(decoder_sublayer2)
             decoder_sublayer3 = Dense(self.d_model, name=next(names))(decoder_sublayer3)
+            decoder_sublayer3 = Dropout(0.1)(decoder_sublayer3)
             decoder_sublayer3 = Add(name=next(names))([decoder_sublayer2, decoder_sublayer3])
             decoder_sublayer3 = LayerNormalization(name=next(names))(decoder_sublayer3)
             # output of layer becomes input of next layer
@@ -205,7 +208,6 @@ class Attention(Layer):
         k_p = K.dot(k, self.W_k)
         k_v = K.dot(v, self.W_v)
         k_t = K.permute_dimensions(K.transpose(k_p), (2, 0, 1))
-        dot = Dot(axes=(1, 2))
         weights = K.batch_dot(q_p, k_t) / K.variable(self.scalar)
         if masking:
             debug('masking')
@@ -367,10 +369,10 @@ if __name__ == '__main__':
         print('MODEL SUMMARY')
         model.summary(line_length=100)
     if cli.plot_encoder:
-        keras.utils.plot_model(model.encoder_model, 'encoder.dot')
+        keras.utils.plot_model(model.encoder_model, 'encoder.dot', show_shapes=True)
         sp.call(['dot', '-Tpng', 'encoder.dot', '-o', 'encoder.png'])
         sp.call(['open', 'encoder.png'])
     if cli.plot_model:
-        keras.utils.plot_model(model, 'model.dot')
+        keras.utils.plot_model(model, 'model.dot', show_shapes=True)
         sp.call(['dot', '-Tpng', 'model.dot', '-o', 'model.png'])
         sp.call(['open', 'model.png'])
