@@ -22,9 +22,9 @@ from keras.models import Model
 
 # TODO:
 # - share embedding weights with final linear transformation
-# - learning rate decay during train
 # - keyword only arguments
 # - visualize attention
+# - use FFN
 
 
 logger = logging.getLogger(__name__)
