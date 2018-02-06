@@ -11,7 +11,6 @@ import subprocess as sp
 
 import keras
 import numpy as np
-from data import training_data
 from keras import backend as K
 from keras import activations
 from keras.engine.topology import Layer, InputSpec
@@ -339,7 +338,6 @@ def init_cli():
     parser.add_argument('--summarize-encoder', action='store_true', default=False)
     parser.add_argument('--plot-model', action='store_true', default=False)
     parser.add_argument('--plot-encoder', action='store_true', default=False)
-    parser.add_argument('--train', action='store_true', default=False)
     parser.add_argument('--debug', action='store_true', default=False)
     cli = parser.parse_args(sys.argv[1:])
     return cli
@@ -376,8 +374,3 @@ if __name__ == '__main__':
         keras.utils.plot_model(model, 'model.dot')
         sp.call(['dot', '-Tpng', 'model.dot', '-o', 'model.png'])
         sp.call(['open', 'model.png'])
-
-    if cli.train:
-        x, y, vocab_size = training_data(sequence_len)
-        model.compile(loss='categorical_crossentropy', optimizer='adam')
-        model.fit([x, x], y, batch_size=30, epochs=1)
