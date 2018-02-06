@@ -21,12 +21,12 @@ from keras.layers.advanced_activations import Softmax
 from keras.models import Model
 
 # TODO:
-# - Mask decoder
 # - share embedding weights with final linear transformation
 # - dropout
 # - learning rate decay during train
-# - Model class
 # - proper logging
+# - do away with Lambdas
+# - saving model
 
 
 DEBUG = False
@@ -61,9 +61,7 @@ class Transformer(Model):
     def init_embeddings(self):
         embedding = Embedding(input_dim=self.vocab_size, output_dim=self.d_model,
                               input_length=self.sequence_len, name='embedding')
-        embedding_scalar = Lambda(lambda x: x*np.sqrt(self.d_model),
-                                  output_shape=lambda x: x,
-                                  name='embedding_scalar')
+        embedding_scalar = Scalar(np.sqrt(self.d_model), name='embedding_scalar')
         positional_encoding = PositionalEncoding(self.d_model, self.sequence_len)
 
         encoder_embedding = embedding(self.encoder_input)
@@ -214,7 +212,7 @@ class Attention(Layer):
         assert shape[1] == shape[2], 'expected square matrix'
         mask = np.zeros((shape[1], shape[1]))
         invalid_indices = np.triu_indices(shape[1], 1)
-        mask[invalid_indices] = 1e-11
+        mask[invalid_indices] = 1e-15
         mask = K.variable(mask)
         return x + mask
 
@@ -237,6 +235,18 @@ class PositionalEncoding(Layer):
                 yield f(np.arange(sequence_len) / ((10000**(2*i/d_model))))
         arr = np.array(list(gen())).transpose()
         return K.variable(arr)
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
+
+class Scalar(Layer):
+    def __init__(self, value, **kwargs):
+        self.value = value
+        super().__init__(**kwargs)
+
+    def call(self, x):
+        return x * self.value
 
     def compute_output_shape(self, input_shape):
         return input_shape
