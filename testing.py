@@ -22,17 +22,16 @@ model = Transformer(
 def generate_text(epoch, logs):
     if epoch % 10 > 0:
         return
-    xi = x[0].reshape((1, -1))
+    i = np.random.randint(len(x))
+    xi = x[i].reshape((1, -1))
     terminate = training_data.char_map[training_data.TERMINATE]
     next_idx = -1
-    text = ''
-    i = 0
-    while next_idx != terminate and i < 100:
+    text = ''.join(training_data.idx_map[i] for i in xi[0])
+    while next_idx != terminate and len(text) < 100:
         pred = model.predict([xi, xi])
         probs = pred[0][-1]
         next_idx = np.random.choice(range(len(probs)), p=probs)
         text += training_data.idx_map[next_idx]
-        i += 1
     print(text)
 
 cb = LambdaCallback(on_epoch_end=generate_text)
