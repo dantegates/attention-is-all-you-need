@@ -7,6 +7,7 @@ Implementation of Transformer model, as described here
 from __future__ import absolute_import, division, print_function
 
 import argparse
+import logging
 import subprocess as sp
 
 import keras
@@ -22,14 +23,11 @@ from keras.models import Model
 # TODO:
 # - share embedding weights with final linear transformation
 # - learning rate decay during train
-# - proper logging
 # - keyword only arguments
+# - visualize attention
 
 
-DEBUG = False
-def debug(*args, **kwargs):
-    if DEBUG:
-        print(*args, **kwargs)
+logger = logging.getLogger(__name__)
 
 
 class Transformer(Model):
@@ -74,7 +72,7 @@ class Transformer(Model):
 
     def init_encoder(self):
         # make encoder
-        debug('making encoder')
+        logger.debug('making encoder')
         encoder_layer_input = self.encoder_embedding
         for i in range(1, self.encoder_layers+1):
             names = iter([
@@ -103,7 +101,7 @@ class Transformer(Model):
     def init_decoder(self):
         # make decoder
         decoder_layer_input = self.decoder_embedding
-        debug('making decoder')
+        logger.debug('making decoder')
         for i in range(1, self.decoder_layers+1):
             names = iter([
                 'decoder_layer%s_mha1' % i,
@@ -146,7 +144,7 @@ class Transformer(Model):
 class MultiHeadAttention(Layer):
     def __init__(self, n_heads, d_model, masking=False, **kwargs):
         # activation = comparison
-        debug('init MultiHeadAttention')
+        logger.debug('init MultiHeadAttention')
         self.n_heads = n_heads
         self.d_model = d_model
         assert self.d_model % n_heads == 0, 'h must divide d_model evenly'
@@ -155,7 +153,7 @@ class MultiHeadAttention(Layer):
         super().__init__(**kwargs)
         
     def build(self, input_shape):
-        debug('building MultiAttention')
+        logger.debug('building MultiAttention')
         self.W_o = self.add_weight(name='W_o', 
                                    shape=(self.n_heads*self.d_v, self.d_model),
                                    initializer='uniform',
@@ -171,7 +169,7 @@ class MultiHeadAttention(Layer):
         if q is None and v is None:
             q = v = k    
         concat = K.concatenate([head(q, k=k, v=v, masking=self.masking) for head in self.heads])
-        debug('concat shape', K.int_shape(concat))
+        logger.debug('concat shape: %s', K.int_shape(concat))
         return K.dot(concat, self.W_o)
 
     def compute_output_shape(self, input_shape):
@@ -180,7 +178,7 @@ class MultiHeadAttention(Layer):
 
 class Attention(Layer):
     def __init__(self, d_model, d_k, d_v, activation, **kwargs):
-        debug('init Attention') 
+        logger.debug('init Attention') 
         self.d_model = d_model
         self.d_k = d_k
         self.d_v = d_v
@@ -210,7 +208,7 @@ class Attention(Layer):
         k_t = K.permute_dimensions(K.transpose(k_p), (2, 0, 1))
         weights = K.batch_dot(q_p, k_t) / K.variable(self.scalar)
         if masking:
-            debug('masking')
+            logger.debug('masking')
             weights = self.mask(weights)
         return K.batch_dot(weights, k_v)
 
