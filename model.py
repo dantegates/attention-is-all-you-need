@@ -342,6 +342,7 @@ def init_cli():
     parser.add_argument('--summarize-encoder', action='store_true', default=False)
     parser.add_argument('--summarize-decoder', action='store_true', default=False)
     parser.add_argument('--plot-models', action='store_true', default=False)
+    parser.add_argument('--plot-model', action='store_true', default=False)
     parser.add_argument('--plot-encoder', action='store_true', default=False)
     parser.add_argument('--plot-decoder', action='store_true', default=False)
     parser.add_argument('--train', action='store_true', default=False)
@@ -381,6 +382,10 @@ if __name__ == '__main__':
         keras.utils.plot_model(model.decoder_model, 'decoder.dot')
         sp.call(['dot', '-Tpng', 'decoder.dot', '-o', 'decoder.png'])
         sp.call(['open', 'decoder.png'])
+    if cli.plot_models or cli.plot_model:
+        keras.utils.plot_model(model, 'model.dot')
+        sp.call(['dot', '-Tpng', 'model.dot', '-o', 'model.png'])
+        sp.call(['open', 'model.png'])
 
     if cli.train:
         x, y, vocab_size = training_data(sequence_len)
