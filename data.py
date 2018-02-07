@@ -13,7 +13,7 @@ class TrainingData:
     TERMINATE = '<end>'
     UNKOWN = '<unk>'
 
-    def __init__(self, directory, extension, sequence_len, batch_size):
+    def __init__(self, directory, extension, sequence_len, batch_size, seed=None):
         self.sequence_len = sequence_len
         self.chars = sorted(set(string.printable))
         self.vocab_size = len(self.chars)
@@ -22,17 +22,19 @@ class TrainingData:
         self.files = glob.glob(
             os.path.join(self.directory, '*%s' % extension))
         self.batch_size = batch_size
+        self.seed = seed
         self.skipped = set()
 
     def __iter__(self):
         while True:
-            random.shuffle(self.files)
+            if self.seed is not None:
+                np.random.seed(self.seed)
+            np.random.shuffle(self.files)
             for file in self.files:
                 with open(file) as f:
                     content = f.read()
                     if len(content) < self.sequence_len+self.batch_size:
                         if not file in self.skipped:
-                            print('skipping file', file)
                             self.skipped.add(file)
                         continue
                     else:
@@ -40,7 +42,7 @@ class TrainingData:
                     i = random.randint(0, len(content) - self.sequence_len)
                     # kind of sloppy, just don't feel like writing batching
                     # correctly at the moment
-                    content = content[i:i+self.sequence_len+self.batch_size]
+                    content = content[i:i+self.sequence_len+self.batch_size+1]
                     x, y = self.init_xy(content)
                     yield [x, x], y
 
@@ -70,7 +72,7 @@ class TrainingData:
                 char = char if char in self.chars else self.UNKOWN
                 x[i, t] = self.char_map[char]
                 # y must be one hot encoded
-                y[i, t, self.char_map[char]] = 1
+                y[i, t, self.char_map[char]] = 1.0
         # offset trainint/test
         x = x[:-1] 
         y = y[1:]
