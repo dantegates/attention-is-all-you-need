@@ -1,6 +1,7 @@
 from functools import partial
 import glob
 import os
+import random
 import string
 
 import numpy as np
@@ -65,35 +66,28 @@ class FileGeneratorTrainingData(TrainingData):
         self.files = glob.glob(
             os.path.join(self.directory, '*%s' % extension))
         self.batch_size = batch_size
+        self.skipped = set()
 
     def __iter__(self):
         while True:
-            for file in self.files:
+            random.shuffle(self.files)
+            for file in random.choices(self.files, k=100):
                 with open(file) as f:
                     content = f.read()
                     if len(content) < self.max_len+self.batch_size:
+                        if not file in self.skipped:
+                            print('skipping file', file)
+                            self.skipped.add(file)
                         continue 
+                    i = random.randint(0, len(content) - self.max_len)
+                    # sloppy hack as below
+                    content = content[i:i+self.max_len]
                     x, y = self.init_xy(content)
+                    # kind of sloppy, just don't feel like writing batching
+                    # correctly at the moment
                     idx = np.random.randint(len(x), size=self.batch_size)
                     yield [x[idx], x[idx]], y[idx]
 
 
-beatles_text = """Boy, you gotta carry that weight
-Carry that weight a long time
-Boy, you gonna carry that weight
-Carry that weight a long time
-
-I never give you my pillow
-I only send you my invitation
-And in the middle of the celebrations
-I break down
-
-Boy, you gotta carry that weight
-Carry that weight a long time
-Boy, you gotta carry that weight
-You're gonna carry that weight a long time
-"""
-
-
-BEATLES = partial(TrainingData, beatles_text)
+BEATLES = partial(FileGeneratorTrainingData, directory='beatles', extension='.txt')
 CNN = partial(FileGeneratorTrainingData, directory='cnn/**', extension='.story')
