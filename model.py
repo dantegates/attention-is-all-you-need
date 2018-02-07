@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 class Transformer(Model):
     def __init__(self, n_heads, encoder_layers, decoder_layers, d_model,
                  vocab_size, sequence_len, layer_normalization, dropout,
-                 redisual_connections):
+                 residual_connections):
         # define attributes
         self.n_heads = n_heads
         self.encoder_layers = encoder_layers
@@ -42,7 +42,7 @@ class Transformer(Model):
         self.sequence_len = sequence_len
         self.layer_normalization = layer_normalization
         self.dropout = dropout
-        self.redisual_connections = redisual_connections
+        self.residual_connections = residual_connections
 
         # initialize model
         self.encoder_input, self.decoder_input = self.init_input()
@@ -94,7 +94,7 @@ class Transformer(Model):
             encoder_sublayer1 = encoder_sublayer1(encoder_layer_input)
             if self.dropout:
                 encoder_sublayer1 = Dropout(0.1)(encoder_sublayer1)
-            if self.redisual_connections:
+            if self.residual_connections:
                 encoder_sublayer1 = Add(name=next(names))([encoder_layer_input, encoder_sublayer1])
             if self.layer_normalization:
                 encoder_sublayer1 = LayerNormalization(name=next(names))(encoder_sublayer1)
@@ -102,7 +102,7 @@ class Transformer(Model):
             encoder_sublayer2 = Dense(self.d_model, name=next(names))(encoder_sublayer2)
             if self.dropout:
                 encoder_sublayer2 = Dropout(0.1)(encoder_sublayer2)
-            if self.redisual_connections:
+            if self.residual_connections:
                 encoder_sublayer2 = Add(name=next(names))([encoder_sublayer1, encoder_sublayer2])
             if self.layer_normalization:
                 encoder_sublayer2 = LayerNormalization(name=next(names))(encoder_sublayer2)
@@ -132,7 +132,7 @@ class Transformer(Model):
             decoder_sublayer1 = decoder_sublayer1(decoder_layer_input)
             if self.dropout:
                 decoder_sublayer1 = Dropout(0.1)(decoder_sublayer1)
-            if self.redisual_connections:
+            if self.residual_connections:
                 decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
             if self.layer_normalization:
                 decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
@@ -140,7 +140,7 @@ class Transformer(Model):
             decoder_sublayer2 = decoder_sublayer2(self.encoder, q=decoder_sublayer1, v=self.encoder)
             if self.dropout:
                 decoder_sublayer2 = Dropout(0.1)(decoder_sublayer2)
-            if self.redisual_connections:
+            if self.residual_connections:
                 decoder_sublayer2 = Add(name=next(names))([decoder_sublayer1, decoder_sublayer2])
             if self.layer_normalization:
                 decoder_sublayer2 = LayerNormalization(name=next(names))(decoder_sublayer2)
@@ -148,7 +148,7 @@ class Transformer(Model):
             decoder_sublayer3 = Dense(self.d_model, name=next(names))(decoder_sublayer3)
             if self.dropout:
                 decoder_sublayer3 = Dropout(0.1)(decoder_sublayer3)
-            if self.redisual_connections:
+            if self.residual_connections:
                 decoder_sublayer3 = Add(name=next(names))([decoder_sublayer2, decoder_sublayer3])
             if self.layer_normalization:
                 decoder_sublayer3 = LayerNormalization(name=next(names))(decoder_sublayer3)

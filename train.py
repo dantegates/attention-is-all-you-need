@@ -4,19 +4,30 @@ import keras
 from keras.callbacks import LambdaCallback, LearningRateScheduler
 from model import Transformer
 
+
+
+# model params
 n_heads = 8
 encoder_layers = decoder_layers = 4
 d_model = 64 * n_heads
 sequence_len = 100
-warmup_steps = 100
-batch_size = 30
+layer_normalization = True
+dropout = True
+residual_connections = True
 
+# training params
+epochs = 100
+batch_size = 30
+warmup_steps = 100
+optimizer = 'adadelta'
 training_data = BEATLES(sequence_len=sequence_len, batch_size=batch_size)
 vocab_size = training_data.vocab_size + 1
 
 model = Transformer(
         n_heads=n_heads, encoder_layers=encoder_layers, decoder_layers=decoder_layers,
-        d_model=d_model, vocab_size=vocab_size, sequence_len=sequence_len)
+        d_model=d_model, vocab_size=vocab_size, sequence_len=sequence_len,
+        layer_normalization=layer_normalization, dropout=dropout,
+        residual_connections=residual_connections)
 
 
 def generate_text(epoch, logs, mode='random'):
@@ -48,7 +59,6 @@ callbacks.append(LambdaCallback(on_epoch_end=generate_text))
 callbacks.append(LearningRateScheduler(lr_schedule))
 
 model.summary(line_length=100)
-optimizer = keras.optimizers.adam(clipvalue=1)
 model.compile(loss='categorical_crossentropy', optimizer=optimizer)
 def gen():
     for i in training_data:
@@ -60,5 +70,5 @@ def gen():
         yield i
 gen = gen()
 model.fit_generator(gen, steps_per_epoch=len(training_data.files)*10,
-                    epochs=100, callbacks=callbacks)
+                    epochs=epochs, callbacks=callbacks)
 model.save('model.h5')
