@@ -19,15 +19,15 @@ model = Transformer(
 
 
 def generate_text(epoch, logs, mode='random'):
-    if epoch % 10 > 0:
-        return
-    i = np.random.randint(len(x))
+    # if epoch % 10 > 0:
+    #     return
+    i = np.random.randint(vocab_size)
     x = np.zeros((1, sequence_len))
     terminate = training_data.char_map[training_data.TERMINATE]
     next_idx = -1
     text = ''.join(training_data.idx_map[i] for i in x[0])
     print('\nusing seed', repr(text))
-    while next_idx != terminate and len(text) < 100:
+    while next_idx != terminate and len(text) < 5000:
         pred = model.predict([x, x])
         probs = pred[0][-1]
         next_idx = np.random.choice(range(len(probs)), p=probs)
@@ -49,6 +49,6 @@ callbacks.append(LearningRateScheduler(lr_schedule))
 model.summary(line_length=100)
 model.compile(loss='categorical_crossentropy', optimizer='adam')
 gen = iter(training_data)
-model.fit_generator(gen, steps_per_epoch=len(training_data.files),
+model.fit_generator(gen, steps_per_epoch=100,#len(training_data.files),
                     epochs=100, callbacks=callbacks)
 model.save('model.h5')
