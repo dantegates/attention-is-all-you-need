@@ -31,13 +31,20 @@ logger = logging.getLogger(__name__)
 
 class Transformer(Model):
     def __init__(self, n_heads, encoder_layers, decoder_layers, d_model,
-                 vocab_size, sequence_len, n_outputs=None):
+                 vocab_size, sequence_len, layer_normalization, dropout,
+                 redisual_connections):
+        # define attributes
         self.n_heads = n_heads
         self.encoder_layers = encoder_layers
         self.decoder_layers = decoder_layers
         self.d_model = d_model
         self.vocab_size = vocab_size
         self.sequence_len = sequence_len
+        self.layer_normalization = layer_normalization
+        self.dropout = dropout
+        self.redisual_connections = redisual_connections
+
+        # initialize model
         self.encoder_input, self.decoder_input = self.init_input()
         self.encoder_embedding, self.decoder_embedding = self.init_embeddings()
         self.encoder = self.init_encoder()
@@ -85,14 +92,20 @@ class Transformer(Model):
             ])
             encoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, name=next(names))
             encoder_sublayer1 = encoder_sublayer1(encoder_layer_input)
-            encoder_sublayer1 = Dropout(0.1)(encoder_sublayer1)
-            encoder_sublayer1 = Add(name=next(names))([encoder_layer_input, encoder_sublayer1])
-            encoder_sublayer1 = LayerNormalization(name=next(names))(encoder_sublayer1)
+            if self.dropout:
+                encoder_sublayer1 = Dropout(0.1)(encoder_sublayer1)
+            if self.redisual_connections:
+                encoder_sublayer1 = Add(name=next(names))([encoder_layer_input, encoder_sublayer1])
+            if self.layer_normalization:
+                encoder_sublayer1 = LayerNormalization(name=next(names))(encoder_sublayer1)
             encoder_sublayer2 = Dense(self.d_model, activation='relu', name=next(names))(encoder_sublayer1)
             encoder_sublayer2 = Dense(self.d_model, name=next(names))(encoder_sublayer2)
-            encoder_sublayer2 = Dropout(0.1)(encoder_sublayer2)
-            encoder_sublayer2 = Add(name=next(names))([encoder_sublayer1, encoder_sublayer2])
-            encoder_sublayer2 = LayerNormalization(name=next(names))(encoder_sublayer2)
+            if self.dropout:
+                encoder_sublayer2 = Dropout(0.1)(encoder_sublayer2)
+            if self.redisual_connections:
+                encoder_sublayer2 = Add(name=next(names))([encoder_sublayer1, encoder_sublayer2])
+            if self.layer_normalization:
+                encoder_sublayer2 = LayerNormalization(name=next(names))(encoder_sublayer2)
             encoder_layer_input = encoder_sublayer2
         # finally pull it all together in a model
         return encoder_sublayer2
@@ -117,19 +130,28 @@ class Transformer(Model):
             decoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model,
                                                    masking=True, name=next(names))
             decoder_sublayer1 = decoder_sublayer1(decoder_layer_input)
-            decoder_sublayer1 = Dropout(0.1)(decoder_sublayer1)
-            decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
-            decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
+            if self.dropout:
+                decoder_sublayer1 = Dropout(0.1)(decoder_sublayer1)
+            if self.redisual_connections:
+                decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
+            if self.layer_normalization:
+                decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
             decoder_sublayer2 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, name=next(names))
             decoder_sublayer2 = decoder_sublayer2(self.encoder, q=decoder_sublayer1, v=self.encoder)
-            decoder_sublayer2 = Dropout(0.1)(decoder_sublayer2)
-            decoder_sublayer2 = Add(name=next(names))([decoder_sublayer1, decoder_sublayer2])
-            decoder_sublayer2 = LayerNormalization(name=next(names))(decoder_sublayer2)
+            if self.dropout:
+                decoder_sublayer2 = Dropout(0.1)(decoder_sublayer2)
+            if self.redisual_connections:
+                decoder_sublayer2 = Add(name=next(names))([decoder_sublayer1, decoder_sublayer2])
+            if self.layer_normalization:
+                decoder_sublayer2 = LayerNormalization(name=next(names))(decoder_sublayer2)
             decoder_sublayer3 = Dense(self.d_model, activation='relu', name=next(names))(decoder_sublayer2)
             decoder_sublayer3 = Dense(self.d_model, name=next(names))(decoder_sublayer3)
-            decoder_sublayer3 = Dropout(0.1)(decoder_sublayer3)
-            decoder_sublayer3 = Add(name=next(names))([decoder_sublayer2, decoder_sublayer3])
-            decoder_sublayer3 = LayerNormalization(name=next(names))(decoder_sublayer3)
+            if self.dropout:
+                decoder_sublayer3 = Dropout(0.1)(decoder_sublayer3)
+            if self.redisual_connections:
+                decoder_sublayer3 = Add(name=next(names))([decoder_sublayer2, decoder_sublayer3])
+            if self.layer_normalization:
+                decoder_sublayer3 = LayerNormalization(name=next(names))(decoder_sublayer3)
             # output of layer becomes input of next layer
             decoder_layer_input = decoder_sublayer3
         # finally stack a linear transformation with softmax activation
