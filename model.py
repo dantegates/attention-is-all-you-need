@@ -19,8 +19,8 @@ from keras.initializers import RandomNormal
 from keras.layers import Add, Dense, Embedding, Input, Dropout
 from keras.models import Model
 
-# TODO:
-# - share embedding weights with final linear transformation
+
+# TODO
 # - keyword only arguments
 # - visualize attention
 # - use FFN
@@ -46,7 +46,7 @@ class Transformer(Model):
 
         # initialize model
         self.encoder_input, self.decoder_input = self.init_input()
-        self.encoder_embedding, self.decoder_embedding = self.init_embeddings()
+        self.encoder_embedding, self.decoder_embedding, self.embedding_weights = self.init_embeddings()
         self.encoder = self.init_encoder()
         self.decoder = self.init_decoder()
         self.encoder_model = Model(self.encoder_input, self.encoder)
@@ -68,13 +68,11 @@ class Transformer(Model):
         encoder_embedding = positional_encoding(encoder_embedding)
         encoder_embedding = embedding_scalar(encoder_embedding)
 
-        # shared_weights = embedding.embeddings
-        # final_transformation = Lambda(lambda x: K.dot(K.transpose(shared_weights), x))
-
         decoder_embedding = embedding(self.decoder_input)
         decoder_embedding = positional_encoding(decoder_embedding)
         decoder_embedding = embedding_scalar(decoder_embedding)
-        return encoder_embedding, decoder_embedding
+
+        return encoder_embedding, decoder_embedding, embedding.embeddings
 
     def init_encoder(self):
         # make encoder
@@ -156,9 +154,8 @@ class Transformer(Model):
             decoder_layer_input = decoder_sublayer3
         # finally stack a linear transformation with softmax activation
         # to get next token probabilities
-        # decoder = final_transformation(decoder_sublayer3)
-        # decoder = Softmax()(decoder)
-        decoder = Dense(self.vocab_size, activation='softmax', name='decoder_output')(decoder_sublayer3)
+        final_output = SharedWeights(K.transpose(self.embedding_weights), activation='softmax')
+        decoder = final_output(decoder_sublayer3)
         return decoder
 
 
@@ -351,6 +348,24 @@ class LayerNormalization(Layer):
 
     def compute_output_shape(self, input_shape):
         return input_shape
+
+
+class SharedWeights(Layer):
+    def __init__(self, shared_weights, activation, **kwargs):
+        self.x = shared_weights
+        self.activation = activations.get(activation)
+        super().__init__(**kwargs)
+
+    def build(self, input_shape):
+        super().build(input_shape)
+
+    def call(self, inputs):
+        out = K.dot(inputs, self.x)
+        return self.activation(out)
+
+    def compute_output_shape(self, input_shape):
+        out = K.int_shape(self.x)[-1]
+        return (input_shape[0], input_shape[1], out)
 
 
 def init_cli():
