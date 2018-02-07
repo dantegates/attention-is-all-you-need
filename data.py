@@ -5,7 +5,7 @@ import random
 import string
 
 import numpy as np
-import requests as rq
+#import requests as rq
 
 
 class TrainingData:
@@ -71,7 +71,7 @@ class FileGeneratorTrainingData(TrainingData):
     def __iter__(self):
         while True:
             random.shuffle(self.files)
-            for file in random.choices(self.files, k=100):
+            for file in self.files:
                 with open(file) as f:
                     content = f.read()
                     if len(content) < self.max_len+self.batch_size:
