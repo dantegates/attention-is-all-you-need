@@ -1,14 +1,14 @@
 import numpy as np
 from data import BEATLES, CNN
 import keras
-from keras.callbacks import LambdaCallback, LearningRateScheduler
+from keras.callbacks import LambdaCallback, LearningRateScheduler, TerminateOnNaN
 from model import Transformer
 
 
 
 # model params
 n_heads = 8
-encoder_layers = decoder_layers = 4
+encoder_layers = decoder_layers = 8
 d_model = 64 * n_heads
 sequence_len = 100
 layer_normalization = True
@@ -19,8 +19,9 @@ residual_connections = True
 epochs = 100
 batch_size = 30
 warmup_steps = 100
-optimizer = 'adadelta'
-training_data = BEATLES(sequence_len=sequence_len, batch_size=batch_size)
+optimizer = keras.optimizers.adam(beta_1=0.9, beta_2=0.98, epsilon=1e-9)
+
+training_data = BEATLES(sequence_len=sequence_len, batch_size=batch_size, seed=0)
 vocab_size = training_data.vocab_size + 1
 
 model = Transformer(
@@ -57,9 +58,9 @@ def lr_schedule(epoch):
 callbacks = []
 callbacks.append(LambdaCallback(on_epoch_end=generate_text))
 callbacks.append(LearningRateScheduler(lr_schedule))
+callbacks.append(TerminateOnNaN())
 
-model.summary(line_length=100)
-model.compile(loss='categorical_crossentropy', optimizer=optimizer)
+batch = []
 def gen():
     for i in training_data:
         (x, x), y = i
@@ -67,8 +68,15 @@ def gen():
             raise Exception('NaNs in input')
         if np.isnan(y).any():
             raise Exception('NaNs in output')
+        batch.append(i)
         yield i
+        batch.pop()
 gen = gen()
-model.fit_generator(gen, steps_per_epoch=len(training_data.files)*10,
-                    epochs=epochs, callbacks=callbacks)
-model.save('model.h5')
+
+
+if __name__ == '__main__':
+    #model.summary(line_length=100)
+    model.compile(loss='categorical_crossentropy', optimizer=optimizer)
+    model.fit_generator(gen, steps_per_epoch=len(training_data.files)*10,
+                        epochs=epochs, callbacks=callbacks)
+    model.save('model.h5')
