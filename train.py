@@ -1,5 +1,6 @@
 import numpy as np
 from data import BEATLES, CNN
+import keras
 from keras.callbacks import LambdaCallback, LearningRateScheduler
 from model import Transformer
 
@@ -10,7 +11,7 @@ sequence_len = 100
 warmup_steps = 100
 batch_size = 30
 
-training_data = CNN(max_len=sequence_len, batch_size=batch_size)
+training_data = BEATLES(sequence_len=sequence_len, batch_size=batch_size)
 vocab_size = training_data.vocab_size + 1
 
 model = Transformer(
@@ -27,7 +28,7 @@ def generate_text(epoch, logs, mode='random'):
     next_idx = -1
     text = ''.join(training_data.idx_map[i] for i in x[0])
     print('\nusing seed', repr(text))
-    while next_idx != terminate and len(text) < 5000:
+    while next_idx != terminate and len(text) < 1000:
         pred = model.predict([x, x])
         probs = pred[0][-1]
         next_idx = np.random.choice(range(len(probs)), p=probs)
@@ -47,8 +48,17 @@ callbacks.append(LambdaCallback(on_epoch_end=generate_text))
 callbacks.append(LearningRateScheduler(lr_schedule))
 
 model.summary(line_length=100)
-model.compile(loss='categorical_crossentropy', optimizer='adam')
-gen = iter(training_data)
-model.fit_generator(gen, steps_per_epoch=100,#len(training_data.files),
-                    epochs=100, callbacks=callbacks, verbose=2)
+optimizer = keras.optimizers.adam(clipvalue=1)
+model.compile(loss='categorical_crossentropy', optimizer=optimizer)
+def gen():
+    for i in training_data:
+        (x, x), y = i
+        if np.isnan(x).any():
+            raise Exception('NaNs in input')
+        if np.isnan(y).any():
+            raise Exception('NaNs in output')
+        yield i
+gen = gen()
+model.fit_generator(gen, steps_per_epoch=len(training_data.files)*10,
+                    epochs=100, callbacks=callbacks)
 model.save('model.h5')
