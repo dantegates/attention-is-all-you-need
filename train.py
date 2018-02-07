@@ -1,14 +1,18 @@
-import numpy as np
-from data import BEATLES, CNN
+from collections import deque
+import os
+
 import keras
 from keras.callbacks import LambdaCallback, LearningRateScheduler, TerminateOnNaN
+import numpy as np
+
+from data import BEATLES, CNN
 from model import Transformer
 
 
 
 # model params
 n_heads = 8
-encoder_layers = decoder_layers = 8
+encoder_layers = decoder_layers = 2
 d_model = 64 * n_heads
 sequence_len = 100
 layer_normalization = True
@@ -18,8 +22,9 @@ residual_connections = True
 # training params
 epochs = 100
 batch_size = 30
-warmup_steps = 100
+warmup_steps = 1000
 optimizer = keras.optimizers.adam(beta_1=0.9, beta_2=0.98, epsilon=1e-9)
+logfile = 'train.log'
 
 training_data = BEATLES(sequence_len=sequence_len, batch_size=batch_size, seed=0)
 vocab_size = training_data.vocab_size + 1
@@ -32,15 +37,12 @@ model = Transformer(
 
 
 def generate_text(epoch, logs, mode='random'):
-    # if epoch % 10 > 0:
-    #     return
     i = np.random.randint(vocab_size)
     x = np.zeros((1, sequence_len))
-    terminate = training_data.char_map[training_data.TERMINATE]
+    terminate = training_data.char_map[training_data.END]
     next_idx = -1
     text = ''.join(training_data.idx_map[i] for i in x[0])
-    print('\nusing seed', repr(text))
-    while next_idx != terminate and len(text) < 1000:
+    while next_idx != terminate and len(text) < 2000:
         pred = model.predict([x, x])
         probs = pred[0][-1]
         next_idx = np.random.choice(range(len(probs)), p=probs)
@@ -48,6 +50,13 @@ def generate_text(epoch, logs, mode='random'):
         # shift elements backward
         x = np.roll(x, -1)
         x[0, -1] = next_idx
+    remove = [training_data.START, training_data.END, training_data.UNKOWN]
+    for rm in remove:
+        text = text.replace(rm, '')
+    with open(logfile, 'a') as f:
+        f.write('epoch: %d, loss=%s\n' % (epoch, logs['loss']))
+        f.write(text)
+        f.write('\n\n')
     print(repr(text))
 
 def lr_schedule(epoch):
@@ -60,7 +69,9 @@ callbacks.append(LambdaCallback(on_epoch_end=generate_text))
 callbacks.append(LearningRateScheduler(lr_schedule))
 callbacks.append(TerminateOnNaN())
 
-batch = []
+# for debugging. e.g. if loss turns to NaN, batches[0] will contain batch
+# that caused the NaN
+batches = deque(maxlen=2)
 def gen():
     for i in training_data:
         (x, x), y = i
@@ -68,14 +79,16 @@ def gen():
             raise Exception('NaNs in input')
         if np.isnan(y).any():
             raise Exception('NaNs in output')
-        batch.append(i)
+        batches.append(i)
         yield i
-        batch.pop()
 gen = gen()
 
 
 if __name__ == '__main__':
-    #model.summary(line_length=100)
+    if os.path.exists(logfile):
+        # clear log file
+        with open(logfile, 'w'):
+            pass
     model.compile(loss='categorical_crossentropy', optimizer=optimizer)
     model.fit_generator(gen, steps_per_epoch=len(training_data.files)*10,
                         epochs=epochs, callbacks=callbacks)
