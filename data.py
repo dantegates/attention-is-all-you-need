@@ -9,8 +9,8 @@ import numpy as np
 
 
 class TrainingData:
-    BEGIN = '<start>'
-    TERMINATE = '<end>'
+    START = '<start>'
+    END = '<end>'
     UNKOWN = '<unk>'
 
     def __init__(self, directory, extension, sequence_len, batch_size, seed=None):
@@ -33,26 +33,28 @@ class TrainingData:
             for file in self.files:
                 with open(file) as f:
                     content = f.read()
-                    if len(content) < self.sequence_len+self.batch_size:
+                    if len(content) < self.batch_size:
                         if not file in self.skipped:
                             print('skipping', file)
                             self.skipped.add(file)
                         continue
-                    else:
-                        content = [self.BEGIN]*self.sequence_len + list(content) + [self.TERMINATE]
-                    i = random.randint(0, len(content) - self.sequence_len - self.batch_size)
+                    # pad content
+                    content = [self.START]*self.sequence_len \
+                              + list(content) \
+                              + [self.END]
                     # kind of sloppy, just don't feel like writing batching
                     # correctly at the moment
+                    i = random.randint(0, len(content) - self.sequence_len - self.batch_size)
                     content = content[i:i+self.sequence_len+self.batch_size+1]
                     x, y = self.init_xy(content)
                     yield [x, x], y
 
     def init_maps(self):
         char_map, idx_map = {}, {}
-        char_map[self.BEGIN] = 0
-        idx_map[0] = self.BEGIN
-        char_map[self.TERMINATE] = 1
-        idx_map[1] = self.TERMINATE
+        char_map[self.START] = 0
+        idx_map[0] = self.START
+        char_map[self.END] = 1
+        idx_map[1] = self.END
         char_map[self.UNKOWN] = 2
         idx_map[2] = self.UNKOWN
         for i, c in enumerate(self.chars, start=3):
