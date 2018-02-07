@@ -336,11 +336,11 @@ class LayerNormalization(Layer):
     def build(self, input_shape):
         self.gain = self.add_weight(name='gain',
                                     shape=input_shape[1:],
-                                    initializer='ones',
+                                    initializer='glorot_uniform',
                                     trainable=True)
         self.bias = self.add_weight(name='bias',
                                     shape=input_shape[1:],
-                                    initializer='ones',
+                                    initializer='glorot_uniform',
                                     trainable=True)
         super().build(input_shape)
 
