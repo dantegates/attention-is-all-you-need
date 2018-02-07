@@ -35,11 +35,12 @@ class TrainingData:
                     content = f.read()
                     if len(content) < self.sequence_len+self.batch_size:
                         if not file in self.skipped:
+                            print('skipping', file)
                             self.skipped.add(file)
                         continue
                     else:
                         content = [self.BEGIN]*self.sequence_len + list(content) + [self.TERMINATE]
-                    i = random.randint(0, len(content) - self.sequence_len)
+                    i = random.randint(0, len(content) - self.sequence_len - self.batch_size)
                     # kind of sloppy, just don't feel like writing batching
                     # correctly at the moment
                     content = content[i:i+self.sequence_len+self.batch_size+1]
