@@ -33,21 +33,24 @@ class TrainingData:
             for file in self.files:
                 with open(file) as f:
                     content = f.read()
-                    if len(content) < self.batch_size:
-                        if not file in self.skipped:
-                            print('skipping', file)
-                            self.skipped.add(file)
-                        continue
-                    # pad content
-                    content = [self.START]*self.sequence_len \
-                              + list(content) \
-                              + [self.END]
-                    # kind of sloppy, just don't feel like writing batching
-                    # correctly at the moment
-                    i = random.randint(0, len(content) - self.sequence_len - self.batch_size)
-                    content = content[i:i+self.sequence_len+self.batch_size+1]
-                    x, y = self.init_xy(content)
-                    yield [x, x], y
+                if len(content) < self.batch_size:
+                    if not file in self.skipped:
+                        print('skipping', file)
+                        self.skipped.add(file)
+                    continue
+                # pad content
+                content = [self.START]*self.sequence_len \
+                          + list(content) \
+                          + [self.END]
+                # kind of sloppy, just don't feel like writing batching
+                # correctly at the moment
+                slice_len = self.sequence_len + self.batch_size + 1
+                i = random.randint(0, len(content) - slice_len)
+                content = content[i:i+slice_len]
+                x, y = self.init_xy(content)
+                assert x.shape == (self.batch_size, self.sequence_len), 'unexpected x.shape %s' % (x.shape,)
+                assert y.shape == (self.batch_size, self.sequence_len, self.vocab_size+1), 'unexpected y.shape %s' % (y.shape,)
+                yield [x, x], y
 
     def init_maps(self):
         char_map, idx_map = {}, {}
@@ -76,7 +79,7 @@ class TrainingData:
                 x[i, t] = self.char_map[char]
                 # y must be one hot encoded
                 y[i, t, self.char_map[char]] = 1.0
-        # offset trainint/test
+        # offset train/test
         x = x[:-1] 
         y = y[1:]
         return x, y
