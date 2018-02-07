@@ -17,7 +17,6 @@ from keras import activations
 from keras.engine.topology import Layer, InputSpec
 from keras.initializers import RandomNormal
 from keras.layers import Add, Dense, Embedding, Input, Dropout
-from keras.layers.advanced_activations import Softmax
 from keras.models import Model
 
 # TODO:
