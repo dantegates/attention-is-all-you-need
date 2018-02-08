@@ -45,16 +45,20 @@ class BatchGenerator:
 
     def __iter__(self):
         while True:
-            x1 = np.zeros((self.batch_size, self.encoder_len))
-            x2 = np.zeros((self.batch_size, self.decoder_len))
-            y = np.zeros((self.batch_size, self.decoder_len, self.VOCAB_SIZE))
-            for i, x1_content, x2_content in enumerate(self.fetch_examples()):
+            x1 = np.zeros((self.batch_size+1, self.encoder_len))
+            x2 = np.zeros((self.batch_size+1, self.decoder_len))
+            y = np.zeros((self.batch_size+1, self.decoder_len, self.VOCAB_SIZE+1))
+            for i, (x1_content, x2_content) in enumerate(self.fetch_examples()):
                 i = i % self.batch_size
                 x1[i, :] = self.make_x(x1_content[-self.encoder_len:], encoder=True)
                 x2[i, :] = self.make_x(x2_content, encoder=False)
                 y[i+1,:,:] = self.make_y(x2_content)
-                # offset x/y
-                yield x1, x2
+                if i == self.batch_size-1:
+                    # offset x/y
+                    yield [x1[:-1], x2[:-1]], y[1:]
+                    x1 = np.zeros((self.batch_size+1, self.encoder_len))
+                    x2 = np.zeros((self.batch_size+1, self.decoder_len))
+                    y = np.zeros((self.batch_size+1, self.decoder_len, self.VOCAB_SIZE+1))
 
     def fetch_content(self):
         for file in self.files:
