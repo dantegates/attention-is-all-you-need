@@ -382,6 +382,7 @@ def init_cli():
     parser.add_argument('--plot-model', action='store_true', default=False)
     parser.add_argument('--plot-encoder', action='store_true', default=False)
     parser.add_argument('--debug', action='store_true', default=False)
+    parser.add_argument('--save-model', action='store_true', default=False)
     cli = parser.parse_args(sys.argv[1:])
     return cli
 
@@ -396,7 +397,7 @@ if __name__ == '__main__':
     sequence_len = 30
     test_sequence_len = 100
     cli = init_cli()
-    DEBUG = cli.debug
+    _ = logging.basicConfig(level='DEBUG') if cli.debug  else None
 
     model = Transformer(
         n_heads=n_heads, encoder_sequence_len=sequence_len, decoder_sequence_len=sequence_len,
@@ -417,3 +418,5 @@ if __name__ == '__main__':
         keras.utils.plot_model(model, 'model.dot', show_shapes=True)
         sp.call(['dot', '-Tpng', 'model.dot', '-o', 'model.png'])
         sp.call(['open', 'model.png'])
+    if cli.save_model:
+        model.save('test_model_save.h5')
