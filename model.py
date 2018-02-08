@@ -24,7 +24,7 @@ from keras.models import Model
 # - keyword only arguments
 # - visualize attention
 # - use FFN
-# - dropout after embedding
+# - serializable!
 
 
 logger = logging.getLogger(__name__)
@@ -70,10 +70,14 @@ class Transformer(Model):
         encoder_embedding = embedding(self.encoder_input)
         encoder_embedding = positional_encoding(encoder_embedding)
         encoder_embedding = embedding_scalar(encoder_embedding)
+        if self.dropout:
+            encoder_embedding = Dropout(0.1)(encoder_embedding)
 
         decoder_embedding = embedding(self.decoder_input)
         decoder_embedding = positional_encoding(decoder_embedding)
         decoder_embedding = embedding_scalar(decoder_embedding)
+        if self.dropout:
+            decoder_embedding = Dropout(0.1)(decoder_embedding)
 
         return encoder_embedding, decoder_embedding, embedding.embeddings
 
