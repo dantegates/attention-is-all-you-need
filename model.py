@@ -25,6 +25,7 @@ from keras.models import Model
 # - visualize attention
 # - use FFN
 # - serializable!
+# - load method
 
 
 logger = logging.getLogger(__name__)
@@ -178,6 +179,11 @@ class MultiHeadAttention(Layer):
         super().__init__(**kwargs)
         
     def build(self, input_shape):
+        if isinstance(input_shape, list):
+            assert len(set(input_shape)) == 1, 'k, q, and v must be of same shape'
+            shape = input_shape[0]
+        else:
+            shape = input_shape
         logger.debug('building MultiAttention')
         self.W_o = self.add_weight(name='W_o', 
                                    shape=(self.n_heads*self.d_v, self.d_model),
@@ -196,7 +202,12 @@ class MultiHeadAttention(Layer):
         return K.dot(concat, self.W_o)
 
     def compute_output_shape(self, input_shape):
-        return (input_shape[0], input_shape[1], self.d_model)
+        if isinstance(input_shape, list):
+            assert len(set(input_shape)) == 1, 'k, q, and v must be of same shape'
+            shape = input_shape[0]
+        else:
+            shape = input_shape
+        return (shape[0], shape[1], self.d_model)
 
 
 class Attention(Layer):
@@ -210,16 +221,21 @@ class Attention(Layer):
         super().__init__(**kwargs)
 
     def build(self, input_shape):
+        if isinstance(input_shape, list):
+            assert len(set(input_shape)) == 1, 'k, q, and v must be of same shape'
+            shape = input_shape[0]
+        else:
+            shape = input_shape
         self.W_q = self.add_weight(name='W_q',
-                                   shape=(input_shape[-1], self.d_k),
+                                   shape=(shape[-1], self.d_k),
                                    initializer=RandomNormal(mean=0.0, stddev=1.0),
                                    trainable=True)
         self.W_k = self.add_weight(name='W_k',
-                                   shape=(input_shape[-1], self.d_k),
+                                   shape=(shape[-1], self.d_k),
                                    initializer=RandomNormal(mean=0.0, stddev=1.0),
                                    trainable=True)
         self.W_v = self.add_weight(name='W_v',
-                                   shape=(input_shape[-1], self.d_v),
+                                   shape=(shape[-1], self.d_v),
                                    initializer=RandomNormal(mean=0.0, stddev=1.0),
                                    trainable=True)
         super().build(input_shape)
@@ -249,7 +265,12 @@ class Attention(Layer):
         return x + mask
 
     def compute_output_shape(self, input_shape):
-        return (input_shape[-1], self.d_v)
+        if isinstance(input_shape, list):
+            assert len(set(input_shape)) == 1, 'k, q, and v must be of same shape'
+            shape = input_shape[0]
+        else:
+            shape = input_shape
+        return (shape[-1], self.d_v)
 
 
 class PositionalEncoding(Layer):
