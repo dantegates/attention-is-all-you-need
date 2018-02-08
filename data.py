@@ -5,7 +5,6 @@ import random
 import string
 
 import numpy as np
-#import requests as rq
 
 
 class TrainingData:
@@ -13,7 +12,7 @@ class TrainingData:
     END = '<end>'
     UNKOWN = '<unk>'
 
-    def __init__(self, directory, extension, sequence_len, batch_size, seed=None):
+    def __init__(self, directory, extension, sequence_len, batch_size, step, seed=None):
         self.sequence_len = sequence_len
         self.chars = sorted(set(string.printable))
         self.vocab_size = len(self.chars)
@@ -22,6 +21,8 @@ class TrainingData:
         self.files = glob.glob(
             os.path.join(self.directory, '*%s' % extension))
         self.batch_size = batch_size
+        self.step = step        
+        self.n_batches = self.compute_n_batches()
         self.seed = seed
         self.skipped = set()
 
@@ -42,15 +43,37 @@ class TrainingData:
                 content = [self.START]*self.sequence_len \
                           + list(content) \
                           + [self.END]
-                # kind of sloppy, just don't feel like writing batching
-                # correctly at the moment
                 slice_len = self.sequence_len + self.batch_size + 1
-                i = random.randint(0, len(content) - slice_len)
-                content = content[i:i+slice_len]
-                x, y = self.init_xy(content)
-                assert x.shape == (self.batch_size, self.sequence_len), 'unexpected x.shape %s' % (x.shape,)
-                assert y.shape == (self.batch_size, self.sequence_len, self.vocab_size+1), 'unexpected y.shape %s' % (y.shape,)
-                yield [x, x], y
+                offset = random.randint(0, self.step)
+                for i in range(0, len(content) - slice_len, self.step):
+                    i += offset
+                    content = content[i:i+slice_len]
+                    x, y = self.init_xy(content)
+                    try:
+                        assert x.shape == (self.batch_size, self.sequence_len), 'unexpected x.shape %s' % (x.shape,)
+                        assert y.shape == (self.batch_size, self.sequence_len, self.vocab_size+1), 'unexpected y.shape %s' % (y.shape,)
+                        yield [x, x], y
+                    except AssertionError:
+                        pass
+
+    def compute_n_batches(self):
+        steps = 0
+        for file in self.files:
+            with open(file) as f:
+                content = f.read()
+                if len(content) < self.batch_size:
+                    if not file in self.skipped:
+                        print('skipping', file)
+                        self.skipped.add(file)
+                    continue                
+                # pad content                
+                content = [self.START]*self.sequence_len \
+                          + list(content) \
+                          + [self.END]
+                slice_len = self.sequence_len + self.batch_size + 1                
+                for i in range(0, len(content) - slice_len, self.step):
+                    steps += 1
+        return steps
 
     def init_maps(self):
         char_map, idx_map = {}, {}
