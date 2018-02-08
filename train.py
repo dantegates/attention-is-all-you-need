@@ -12,7 +12,7 @@ from model import Transformer
 
 # model params
 n_heads = 8
-encoder_layers = decoder_layers = 2
+encoder_layers = decoder_layers = 4
 d_model = 64 * n_heads
 sequence_len = 100
 layer_normalization = True
@@ -25,9 +25,10 @@ batch_size = 30
 warmup_steps = 1000
 optimizer = keras.optimizers.adam(beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 logfile = 'train.log'
-
-training_data = BEATLES(sequence_len=sequence_len, batch_size=batch_size, seed=0)
-vocab_size = training_data.vocab_size + 1
+batch_steps = 3
+training_data = BEATLES(encoder_len=sequence_len, decoder_len=sequence_len,
+                        batch_size=batch_size, step_size=batch_steps)
+vocab_size = training_data.VOCAB_SIZE + 1
 
 model = Transformer(
         n_heads=n_heads, encoder_layers=encoder_layers, decoder_layers=decoder_layers,
@@ -72,16 +73,7 @@ callbacks.append(TerminateOnNaN())
 # for debugging. e.g. if loss turns to NaN, batches[0] will contain batch
 # that caused the NaN
 batches = deque(maxlen=2)
-def gen():
-    for i in training_data:
-        (x, x), y = i
-        if np.isnan(x).any():
-            raise Exception('NaNs in input')
-        if np.isnan(y).any():
-            raise Exception('NaNs in output')
-        batches.append(i)
-        yield i
-gen = gen()
+gen = (i for i in training_data)
 
 
 if __name__ == '__main__':
