@@ -24,17 +24,20 @@ from keras.models import Model
 # - keyword only arguments
 # - visualize attention
 # - use FFN
+# - dropout after embedding
 
 
 logger = logging.getLogger(__name__)
 
 
 class Transformer(Model):
-    def __init__(self, n_heads, encoder_layers, decoder_layers, d_model,
-                 vocab_size, sequence_len, layer_normalization, dropout,
-                 residual_connections):
+    def __init__(self, n_heads, encoder_sequence_len, decoder_sequence_len,
+                 encoder_layers, decoder_layers, d_model, vocab_size, sequence_len,
+                 layer_normalization=True, dropout=True, residual_connections=True):
         # define attributes
         self.n_heads = n_heads
+        self.encoder_sequence_len = encoder_sequence_len
+        self.decoder_sequence_len = decoder_sequence_len
         self.encoder_layers = encoder_layers
         self.decoder_layers = decoder_layers
         self.d_model = d_model
@@ -54,13 +57,13 @@ class Transformer(Model):
                          outputs=self.decoder)
 
     def init_input(self):
-        encoder_input = Input(shape=(None,), name='encoder_input')
-        decoder_input = Input(shape=(None,), name='decoder_input')
+        encoder_input = Input(shape=(self.encoder_sequence_len,), name='encoder_input')
+        decoder_input = Input(shape=(self.decoder_sequence_len,), name='decoder_input')
         return encoder_input, decoder_input
 
     def init_embeddings(self):
         embedding = Embedding(input_dim=self.vocab_size, output_dim=self.d_model,
-                              input_length=self.sequence_len, name='embedding')
+                              name='embedding')
         embedding_scalar = Scalar(np.sqrt(self.d_model), name='embedding_scalar')
         positional_encoding = PositionalEncoding(self.d_model, self.sequence_len)
 
@@ -392,9 +395,9 @@ if __name__ == '__main__':
     DEBUG = cli.debug
 
     model = Transformer(
-        n_heads=n_heads, encoder_layers=encoder_layers,
-        decoder_layers=decoder_layers, d_model=d_model, vocab_size=vocab_size,
-        sequence_len=sequence_len)
+        n_heads=n_heads, encoder_sequence_len=sequence_len, decoder_sequence_len=sequence_len,
+        encoder_layers=encoder_layers, decoder_layers=decoder_layers, d_model=d_model,
+        vocab_size=vocab_size, sequence_len=sequence_len)
 
     if cli.summarize_encoder:
         print('ENCODER SUMMARY')
