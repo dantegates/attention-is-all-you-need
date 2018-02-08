@@ -32,18 +32,16 @@ logger = logging.getLogger(__name__)
 
 
 class Transformer(Model):
-    def __init__(self, n_heads, encoder_sequence_len, decoder_sequence_len,
-                 encoder_layers, decoder_layers, d_model, vocab_size, sequence_len,
+    def __init__(self, n_heads, sequence_len,
+                 encoder_layers, decoder_layers, d_model, vocab_size,
                  layer_normalization=True, dropout=True, residual_connections=True):
         # define attributes
         self.n_heads = n_heads
-        self.encoder_sequence_len = encoder_sequence_len
-        self.decoder_sequence_len = decoder_sequence_len
+        self.sequence_len = sequence_len
         self.encoder_layers = encoder_layers
         self.decoder_layers = decoder_layers
         self.d_model = d_model
         self.vocab_size = vocab_size
-        self.sequence_len = sequence_len
         self.layer_normalization = layer_normalization
         self.dropout = dropout
         self.residual_connections = residual_connections
@@ -58,15 +56,15 @@ class Transformer(Model):
                          outputs=self.decoder)
 
     def init_input(self):
-        encoder_input = Input(shape=(self.encoder_sequence_len,), name='encoder_input')
-        decoder_input = Input(shape=(self.decoder_sequence_len,), name='decoder_input')
+        encoder_input = Input(shape=(None,), name='encoder_input')
+        decoder_input = Input(shape=(None,), name='decoder_input')
         return encoder_input, decoder_input
 
     def init_embeddings(self):
         embedding = Embedding(input_dim=self.vocab_size, output_dim=self.d_model,
-                              name='embedding')
+                              input_length=self.sequence_len, name='embedding')
         embedding_scalar = Scalar(np.sqrt(self.d_model), name='embedding_scalar')
-        positional_encoding = PositionalEncoding(self.d_model, self.sequence_len)
+        positional_encoding = PositionalEncoding(self.d_model, self.sequence_len)        
 
         encoder_embedding = embedding(self.encoder_input)
         encoder_embedding = positional_encoding(encoder_embedding)
