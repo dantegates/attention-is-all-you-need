@@ -1,63 +1,62 @@
+import collections
 from functools import partial
 import glob
 import os
-import random
 import string
 
 import numpy as np
 
 
-class TrainingData:
+class BatchGenerator:
+
     START = '<start>'
     END = '<end>'
     UNKOWN = '<unk>'
+    CHARS = sorted(set(string.printable))
 
-    def __init__(self, directory, extension, sequence_len, batch_size, step, seed=None):
-        self.sequence_len = sequence_len
-        self.chars = sorted(set(string.printable))
-        self.vocab_size = len(self.chars)
-        self.char_map, self.idx_map = self.init_maps()
+    CHAR_MAP = {
+        START: 0,
+        END: 1,
+        UNKOWN: 2,
+    }
+
+    IDX_MAP = {
+        0: START,
+        1: END,
+        2: UNKOWN,
+    }
+
+    CHAR_MAP.update((c, i) for i, c in enumerate(CHARS))
+    IDX_MAP.update((i, c) for i, c in enumerate(CHARS))
+
+    VOCAB_SIZE = len(CHARS)
+
+    def __init__(self, encoder_len, decoder_len, directory, extension, batch_size,
+                 step_size, tokenizer='chars'):
+        self.encoder_len = encoder_len
+        self.decoder_len = decoder_len
         self.directory = directory
-        self.files = glob.glob(
-            os.path.join(self.directory, '*%s' % extension))
+        self.files = glob.glob(os.path.join(self.directory, '*%s' % extension))
         self.batch_size = batch_size
-        self.step = step        
-        self.n_batches = self.compute_n_batches()
-        self.seed = seed
+        self.step_size = step_size
+        self.n_batches = sum(1 for _ in self.fetch_examples()) // self.batch_size
+        self.tokenizer = tokenizer
         self.skipped = set()
 
     def __iter__(self):
         while True:
-            if self.seed is not None:
-                np.random.seed(self.seed)
-            np.random.shuffle(self.files)
-            for file in self.files:
-                with open(file) as f:
-                    content = f.read()
-                if len(content) < self.batch_size:
-                    if not file in self.skipped:
-                        print('skipping', file)
-                        self.skipped.add(file)
-                    continue
-                # pad content
-                content = [self.START]*self.sequence_len \
-                          + list(content) \
-                          + [self.END]
-                slice_len = self.sequence_len + self.batch_size + 1
-                offset = random.randint(0, self.step)
-                for i in range(0, len(content) - slice_len, self.step):
-                    i += offset
-                    content = content[i:i+slice_len]
-                    x, y = self.init_xy(content)
-                    try:
-                        assert x.shape == (self.batch_size, self.sequence_len), 'unexpected x.shape %s' % (x.shape,)
-                        assert y.shape == (self.batch_size, self.sequence_len, self.vocab_size+1), 'unexpected y.shape %s' % (y.shape,)
-                        yield [x, x], y
-                    except AssertionError:
-                        pass
+            x1 = np.zeros((self.batch_size, self.encoder_len))
+            x2 = np.zeros((self.batch_size, self.decoder_len))
+            y = np.zeros((self.batch_size, self.decoder_len, self.VOCAB_SIZE))
+            for i, x1_content, x2_content in enumerate(self.fetch_examples()):
+                i = i % self.batch_size
+                x1[i, :] = self.make_x(x1_content[-self.encoder_len:], encoder=True)
+                x2[i, :] = self.make_x(x2_content, encoder=False)
+                y[i+1,:,:] = self.make_y(x2_content)
+                # offset x/y
+                yield x1, x2
 
-    def compute_n_batches(self):
-        steps = 0
+    def fetch_content(self):
         for file in self.files:
             with open(file) as f:
                 content = f.read()
@@ -65,47 +64,50 @@ class TrainingData:
                     if not file in self.skipped:
                         print('skipping', file)
                         self.skipped.add(file)
-                    continue                
-                # pad content                
-                content = [self.START]*self.sequence_len \
-                          + list(content) \
-                          + [self.END]
-                slice_len = self.sequence_len + self.batch_size + 1                
-                for i in range(0, len(content) - slice_len, self.step):
-                    steps += 1
-        return steps
+                yield content
 
-    def init_maps(self):
-        char_map, idx_map = {}, {}
-        char_map[self.START] = 0
-        idx_map[0] = self.START
-        char_map[self.END] = 1
-        idx_map[1] = self.END
-        char_map[self.UNKOWN] = 2
-        idx_map[2] = self.UNKOWN
-        for i, c in enumerate(self.chars, start=3):
-            char_map[c] = i
-            idx_map[i] = c
-        return char_map, idx_map
+    def fetch_examples(self):
+        for content in self.fetch_content():
+            lines = content.split('\n')
+            for i in range(len(lines)):
+                l1, l2 = lines[:i], lines[i]
+                for j in range(0, len(l2)+1, self.step_size):
+                    yield '\n'.join(l1), l2[:j] + '\n'
 
-    def init_xy(self, text):
-        sentences = []
-        next_sentences = []
-        for i in range(0, len(text)-self.sequence_len):
-            sentences.append(text[i:i+self.sequence_len])
-            next_sentences.append(text[i+1:self.sequence_len+1])
-        x = np.zeros((len(sentences), self.sequence_len), dtype=np.int64)
-        y = np.zeros((len(sentences), self.sequence_len, self.vocab_size+1))
-        for i, s in enumerate(sentences):
-            for t, char in enumerate(s):
-                char = char if char in self.chars else self.UNKOWN
-                x[i, t] = self.char_map[char]
-                # y must be one hot encoded
-                y[i, t, self.char_map[char]] = 1.0
-        # offset train/test
-        x = x[:-1] 
-        y = y[1:]
-        return x, y
+    def tokenize(self, text):
+        tokens = []
+        if self.tokenizer == 'chars':
+            tokens = list(text)
+        # if self.tokenizer == 'words':
+        #     for p in string.punctuation:
+        #         text = text.replace(p, ' %s ' % p)
+        #     tokens = [s.strip() for s in text.split()]
+        tokens = [c if c in self.CHARS else self.UNKOWN
+                  for c in tokens]
+        return collections.deque(tokens)
 
-BEATLES = partial(TrainingData, directory='beatles', extension='.txt')
-CNN = partial(TrainingData, directory='cnn/**', extension='.story')
+    def make_x(self, text, encoder):
+        sequence_len = self.encoder_len if encoder else self.decoder_len
+        tokens = self.tokenize(text)
+        if len(tokens) < sequence_len:
+            tokens.append(self.END)
+        while len(tokens) < sequence_len:
+            tokens.appendleft(self.START)
+        x = np.array([self.CHAR_MAP[c] for c in tokens])
+        return x
+
+    def make_y(self, text):
+        sequence_len = self.decoder_len
+        tokens = self.tokenize(text)
+        if len(tokens) < sequence_len:
+            tokens.append(self.END)
+        while len(tokens) < sequence_len:
+            tokens.appendleft(self.START)
+        y = np.zeros((sequence_len, self.VOCAB_SIZE+1))
+        for i, c in enumerate(tokens):
+            y[i][self.CHAR_MAP[c]] = 1
+        return y
+
+
+BEATLES = partial(BatchGenerator, directory='beatles', extension='.txt')
+CNN = partial(BatchGenerator, directory='cnn/**', extension='.story')
