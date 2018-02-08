@@ -142,7 +142,7 @@ class Transformer(Model):
             if self.layer_normalization:
                 decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
             decoder_sublayer2 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, name=next(names))
-            decoder_sublayer2 = decoder_sublayer2(self.encoder, q=decoder_sublayer1, v=self.encoder)
+            decoder_sublayer2 = decoder_sublayer2([decoder_sublayer1, self.encoder, self.encoder])
             if self.dropout:
                 decoder_sublayer2 = Dropout(0.1)(decoder_sublayer2)
             if self.residual_connections:
@@ -190,10 +190,8 @@ class MultiHeadAttention(Layer):
     # this signature is a hack to work with keras layers call only adding
     # a single position tensor to the graph (causes problems in encoder-decoder
     # attention)
-    def call(self, k, q=None, v=None):
-        if q is None and v is None:
-            q = v = k    
-        concat = K.concatenate([head(q, k=k, v=v, masking=self.masking) for head in self.heads])
+    def call(self, inputs):
+        concat = K.concatenate([head(inputs, masking=self.masking) for head in self.heads])
         logger.debug('concat shape: %s', K.int_shape(concat))
         return K.dot(concat, self.W_o)
 
@@ -226,7 +224,11 @@ class Attention(Layer):
                                    trainable=True)
         super().build(input_shape)
 
-    def call(self, q, k, v, masking=False):
+    def call(self, inputs, masking=False):
+        try:
+            q, k, v = inputs
+        except TypeError:
+            q = k = v = inputs
         q_p = K.dot(q, self.W_q)
         k_p = K.dot(k, self.W_k)
         k_v = K.dot(v, self.W_v)
