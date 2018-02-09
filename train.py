@@ -12,9 +12,9 @@ from model import Transformer
 
 # model params
 n_heads = 8
-encoder_layers = decoder_layers = 4
+encoder_layers = decoder_layers = 1
 d_model = 64 * n_heads
-sequence_len = 100
+sequence_len = 150
 layer_normalization = True
 dropout = True
 residual_connections = True
@@ -40,14 +40,14 @@ model = Transformer(
 def generate_text(epoch, logs, mode='random'):
     i = np.random.randint(vocab_size)
     x = np.zeros((1, sequence_len))
-    terminate = training_data.char_map[training_data.END]
+    terminate = training_data.CHAR_MAP[training_data.END]
     next_idx = -1
-    text = ''.join(training_data.idx_map[i] for i in x[0])
+    text = ''.join(training_data.IDX_MAP[i] for i in x[0])
     while next_idx != terminate and len(text) < 2000:
         pred = model.predict([x, x])
         probs = pred[0][-1]
         next_idx = np.random.choice(range(len(probs)), p=probs)
-        text += training_data.idx_map[next_idx]
+        text += training_data.IDX_MAP[next_idx]
         # shift elements backward
         x = np.roll(x, -1)
         x[0, -1] = next_idx
@@ -82,6 +82,9 @@ if __name__ == '__main__':
         with open(logfile, 'w'):
             pass
     model.compile(loss='categorical_crossentropy', optimizer=optimizer)
-    model.fit_generator(gen, steps_per_epoch=len(training_data.files)*10,
-                        epochs=epochs, callbacks=callbacks)
+    try:
+        model.fit_generator(gen, steps_per_epoch=len(training_data.files)*10,
+                            epochs=epochs, callbacks=callbacks)
+    except KeyboardInterrupt:
+        pass
     model.save('model.h5')
