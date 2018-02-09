@@ -20,14 +20,11 @@ class BatchGenerator:
         UNKOWN: 2,
     }
 
-    IDX_MAP = {
-        0: START,
-        1: END,
-        2: UNKOWN,
-    }
+    IDX_MAP = {i: c for c, i in CHAR_MAP.items()}
 
-    CHAR_MAP.update((c, i) for i, c in enumerate(CHARS))
-    IDX_MAP.update((i, c) for i, c in enumerate(CHARS))
+
+    CHAR_MAP.update((c, i) for i, c in enumerate(CHARS, start=max(IDX_MAP+1))
+    IDX_MAP.update((i, c) for i, c in enumerate(CHARS, start=max(IDX_MAP+1)))
 
     VOCAB_SIZE = len(CHARS)
 
