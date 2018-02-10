@@ -17,10 +17,9 @@ class BatchGenerator:
                 # tokenizing simple
     UNKOWN = '<unk>'
 
-    def __init__(self, encoder_len, decoder_len, directory, extension, batch_size,
+    def __init__(self, sequence_len, directory, extension, batch_size,
                  step_size, tokenizer='chars'):
-        self.encoder_len = encoder_len
-        self.decoder_len = decoder_len
+        self.sequence_len = sequence_len
         self.directory = directory
         self.files = glob.glob(os.path.join(self.directory, '*%s' % extension))[:1]
         self.batch_size = batch_size
@@ -47,9 +46,9 @@ class BatchGenerator:
     def __iter__(self):
         while True:
             random.shuffle(self.examples)
-            x1 = np.zeros((self.batch_size, self.encoder_len))
-            x2 = np.zeros((self.batch_size, self.decoder_len))
-            y = np.zeros((self.batch_size, self.decoder_len, self.vocab_size+1))
+            x1 = np.zeros((self.batch_size, self.sequence_len))
+            x2 = np.zeros((self.batch_size, self.sequence_len))
+            y = np.zeros((self.batch_size, self.sequence_len, self.vocab_size+1))
             for i, (ex1, ex2, target) in enumerate(self.examples):
                 i = i % self.batch_size
                 x1[i, :] = self.tokens_to_x(ex1)
@@ -57,9 +56,10 @@ class BatchGenerator:
                 y[i,:,:] = self.tokens_to_y(target)
                 if i == self.batch_size-1:
                     yield [x1, x2], y
-                    x1 = np.zeros((self.batch_size, self.encoder_len))
-                    x2 = np.zeros((self.batch_size, self.decoder_len))
-                    y = np.zeros((self.batch_size, self.decoder_len, self.vocab_size+1))
+                    x1 = np.zeros((self.batch_size, self.sequence_len))
+                    x2 = np.zeros((self.batch_size, self.sequence_len))
+                    y = np.zeros((self.batch_size, self.sequence_len, self.vocab_size+1))                    
+
 
     def fetch_file_content(self):
         for file in self.files:
@@ -79,7 +79,7 @@ class BatchGenerator:
                 context_text, target_text = '\n'.join(lines[:i]), lines[i] + '\n'
                 if context_text:
                     context_text += '\n'
-                x1 = self.tokenize(context_text)[-self.encoder_len:]
+                x1 = self.tokenize(context_text)[-self.sequence_len:]
                 target_tokens = self.tokenize(target_text)
                 for j in range(0, len(target_tokens), self.step_size):
                     x2 = target_tokens[:j]
@@ -102,18 +102,16 @@ class BatchGenerator:
         return tokens
 
     def tokens_to_x(self, tokens):
-        sequence_len = self.encoder_len
-        while len(tokens) < sequence_len:
+        while len(tokens) < self.sequence_len:
             tokens.append(self.PAD)
         logger.debug('x tokens: %r', tokens)
         x = np.array([self.char_map[c] for c in tokens])
         return x
 
     def tokens_to_y(self, tokens):
-        sequence_len = self.decoder_len
-        while len(tokens) < sequence_len:
+        while len(tokens) < self.sequence_len:
             tokens.append(self.PAD)
-        y = np.zeros((sequence_len, self.vocab_size+1))
+        y = np.zeros((self.sequence_len, self.vocab_size+1))
         logger.debug('y tokens: %r', tokens)
         for i, c in enumerate(tokens):
             idx = self.char_map[c]
