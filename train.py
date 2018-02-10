@@ -5,14 +5,14 @@ import keras
 import numpy as np
 from data import BEATLES, CNN
 from keras.callbacks import (LambdaCallback, LearningRateScheduler,
-                             TerminateOnNaN)
+                             TerminateOnNaN, ModelCheckpoint)
 from model import Transformer
 
 # model params
 n_heads = 8
-encoder_layers = decoder_layers = 2
+encoder_layers = decoder_layers = 4
 d_model = 64 * n_heads
-sequence_len = 100
+sequence_len = 150
 layer_normalization = True
 dropout = True
 residual_connections = True
@@ -69,9 +69,10 @@ def lr_schedule(epoch):
     return lr
 
 callbacks = []
-callbacks.append(LambdaCallback(on_epoch_end=generate_text))
+#callbacks.append(LambdaCallback(on_epoch_end=generate_text))
 callbacks.append(LearningRateScheduler(lr_schedule))
 callbacks.append(TerminateOnNaN())
+callbacks.append(ModelCheckpoint(filepath='model.h5'))
 
 # for debugging. e.g. if loss turns to NaN, batches[0] will contain batch
 # that caused the NaN
@@ -91,4 +92,4 @@ if __name__ == '__main__':
                             epochs=epochs, callbacks=callbacks)
     except KeyboardInterrupt:
         pass
-    model.save('model.h5')
+model.save('model.h5')
