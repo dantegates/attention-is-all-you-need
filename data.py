@@ -23,7 +23,7 @@ class BatchGenerator:
         self.encoder_len = encoder_len
         self.decoder_len = decoder_len
         self.directory = directory
-        self.files = glob.glob(os.path.join(self.directory, '*%s' % extension))[:2]
+        self.files = glob.glob(os.path.join(self.directory, '*%s' % extension))
         self.batch_size = batch_size
         self.step_size = step_size
         self.tokenizer = tokenizer
