@@ -23,8 +23,6 @@ from keras.models import Model
 # TODO
 # - keyword only arguments
 # - visualize attention
-# - use FFN
-# - serializable!
 # - load method
 
 
@@ -421,9 +419,8 @@ if __name__ == '__main__':
     _ = logging.basicConfig(level='DEBUG') if cli.debug  else None
 
     model = Transformer(
-        n_heads=n_heads, encoder_sequence_len=sequence_len, decoder_sequence_len=sequence_len,
-        encoder_layers=encoder_layers, decoder_layers=decoder_layers, d_model=d_model,
-        vocab_size=vocab_size, sequence_len=sequence_len)
+        n_heads=n_heads, encoder_layers=encoder_layers, decoder_layers=decoder_layers,
+        d_model=d_model, vocab_size=vocab_size, sequence_len=sequence_len)
 
     if cli.summarize_encoder:
         print('ENCODER SUMMARY')
@@ -441,3 +438,5 @@ if __name__ == '__main__':
         sp.call(['open', 'model.png'])
     if cli.save_model:
         model.save('test_model_save.h5')
+        # so far this is an unsatisfying, solution.
+        model.load_weights('test_model_save.h5')
