@@ -37,17 +37,21 @@ model = Transformer(
         residual_connections=residual_connections)
 
 
-def generate_text(epoch, logs):
-    x1 = batch_generator.tokens_to_x([]).reshape((1, -1))
-    x2 = batch_generator.tokens_to_x([]).reshape((1, -1))
-    x = [x1, x2]
+def generate_text(epoch, logs, method='random'):
     token = object()
-    tokens = []
+    seed = np.random.randint(len(batch_generator.examples))
+    tokens, line_tokens, _ = batch_generator.examples[seed]
+    x1 = batch_generator.tokens_to_x(tokens).reshape((1, -1))
+    x2 = batch_generator.tokens_to_x(line_tokens).reshape((1, -1))
+    x = [x1, x2]
     while token != batch_generator.END and len(tokens) < sequence_len:
         # predict and sample an index according to probability dist.
         pred = model.predict(x)
         probs = pred[0][-1]
-        idx = np.random.choice(range(len(probs)), p=probs)
+        if method == 'greedy':
+            idx = int(np.argmax(probs))
+        else:
+            idx = np.random.choice(range(len(probs)), p=probs)
 
         # convert the index to token
         # The model is trained on context of all previous lines.
@@ -57,19 +61,18 @@ def generate_text(epoch, logs):
         # Otherwise, add idx to the decoder input and leave the encoder
         # context as is
         token = batch_generator.idx_to_char(idx)
-        tokens.append(token)
+        line_tokens.append(token)
+        print(tokens, line_tokens)
         if token == '\n':
-            x1 = batch_generator.tokens_to_x(tokens).reshape((1, -1))
-            x2 = batch_generator.tokens_to_x([]).reshape((1, -1))
-        else:
-            # shift elements backward
-            x1, x2 = x
-            x2 = np.roll(x2, -1)
-            x2[0, -1] = idx
+            tokens.extend(line_tokens)
+            line_tokens = []
+        x1 = batch_generator.tokens_to_x(tokens).reshape((1, -1))
+        x2 = batch_generator.tokens_to_x(line_tokens).reshape((1, -1))
         x = [x1, x2]
-
+    tokens.extend(line_tokens)
     # remove special tokens
-    remove = [batch_generator.PAD, batch_generator.END, batch_generator.UNKOWN]
+#    remove = [batch_generator.PAD, batch_generator.END, batch_generator.UNKOWN]
+    remove = []
     text = ' '.join(t for t in tokens if not t in remove)
     with open(logfile, 'a') as f:
         f.write('epoch: %d, loss=%s\n' % (epoch, logs['loss']))
