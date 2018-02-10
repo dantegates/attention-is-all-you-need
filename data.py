@@ -85,7 +85,7 @@ class BatchGenerator:
                     target = target_tokens[:j]
                     logger.debug('fetched context: %r', context)
                     logger.debug('feteched target: %r', target)
-                    examples.append((context_tokens, target_tokens))
+                    examples.append((context, target))
         return examples
 
     def tokenize(self, text):
