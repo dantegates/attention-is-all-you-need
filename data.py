@@ -1,4 +1,3 @@
-import collections
 import glob
 import logging
 import os
@@ -23,7 +22,7 @@ class BatchGenerator:
         self.encoder_len = encoder_len
         self.decoder_len = decoder_len
         self.directory = directory
-        self.files = glob.glob(os.path.join(self.directory, '*%s' % extension))
+        self.files = glob.glob(os.path.join(self.directory, '*%s' % extension))[:1]
         self.batch_size = batch_size
         self.step_size = step_size
         self.tokenizer = tokenizer
@@ -77,7 +76,7 @@ class BatchGenerator:
         for content in self.fetch_content():
             lines = content.split('\n')
             for i in range(len(lines)):
-                context_text, target_text = '\n'.join(lines[:i]), lines[i] + '\n'
+                context_text, target_text = '\n'.join(lines[:i]) + '\n', lines[i] + '\n'
                 context_tokens = self.tokenize(context_text)
                 context = context_tokens[-self.encoder_len:]
                 target_tokens = self.tokenize(target_text)
@@ -96,26 +95,24 @@ class BatchGenerator:
             for p in string.punctuation.replace("'", ''):
                 text = text.replace(p, ' %s ' % p)
             text = text.replace('\n', ' \n ')
-            tokens = [s.strip(' ') for s in text.split(' ')]
+            tokens = [s.strip(' ') for s in text.split(' ') if s.strip(' ')]
             tokens = list(itertools.chain(tokens))
         else:
             raise ValueError('unrecognized tokenizer')
         return tokens
 
     def tokens_to_x(self, tokens):
-        tokens = collections.deque(tokens)
         sequence_len = self.encoder_len
         while len(tokens) < sequence_len:
-            tokens.appendleft(self.PAD)
+            tokens.append(self.PAD)
         logger.debug('x tokens: %r', tokens)
         x = np.array([self.char_map[c] for c in tokens])
         return x
 
     def tokens_to_y(self, tokens):
-        tokens = collections.deque(tokens)
         sequence_len = self.decoder_len
         while len(tokens) < sequence_len:
-            tokens.appendleft(self.PAD)
+            tokens.append(self.PAD)
         y = np.zeros((sequence_len, self.vocab_size+1))
         logger.debug('y tokens: %r', tokens)
         for i, c in enumerate(tokens):
