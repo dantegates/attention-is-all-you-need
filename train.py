@@ -38,10 +38,12 @@ model = Transformer(
 
 
 def generate_text(epoch, logs, method='random'):
+    remove = [batch_generator.PAD, batch_generator.END, batch_generator.UNKOWN]    
     token = object()
-    seed = np.random.randint(len(batch_generator.examples))
-    tokens, line_tokens, _ = batch_generator.examples[seed]
+    tokens, line_tokens, _ = batch_generator.test_example
     tokens, line_tokens = tokens[:], line_tokens[:]
+    tokens, line_tokens = [t for t in tokens if not t in remove], \
+                          [t for t in line_tokens if not t in remove]
     x1 = batch_generator.tokens_to_x(tokens).reshape((1, -1))
     x2 = batch_generator.tokens_to_x(line_tokens).reshape((1, -1))
     x = [x1, x2]
@@ -63,7 +65,6 @@ def generate_text(epoch, logs, method='random'):
         # context as is
         token = batch_generator.idx_to_char(idx)
         line_tokens.append(token)
-        print(tokens, line_tokens)
         if token == '\n':
             tokens.extend(line_tokens)
             line_tokens = []
@@ -72,8 +73,6 @@ def generate_text(epoch, logs, method='random'):
         x = [x1, x2]
     tokens.extend(line_tokens)
     # remove special tokens
-#    remove = [batch_generator.PAD, batch_generator.END, batch_generator.UNKOWN]
-    remove = []
     text = ' '.join(t for t in tokens if not t in remove)
     with open(logfile, 'a') as f:
         f.write('epoch: %d, loss=%s\n' % (epoch, logs['loss']))
@@ -97,13 +96,18 @@ batches = deque(maxlen=2)
 gen = (i for i in batch_generator)
 
 
+from keras import backend as K
+def loss(y_true, y_pred):
+    return K.categorical_crossentropy(y_true[:,-20:,:], y_pred[:,-20:,:])
+
+
 if __name__ == '__main__':
     if os.path.exists(logfile):
         # clear log file
         with open(logfile, 'w'):
             pass
     model.summary()
-    model.compile(loss='categorical_crossentropy', optimizer=optimizer)
+    model.compile(loss=loss, optimizer=optimizer)
     try:
         model.fit_generator(gen, steps_per_epoch=len(batch_generator.files)*10,
                             epochs=epochs, callbacks=callbacks)
