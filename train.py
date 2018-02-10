@@ -1,20 +1,18 @@
-from collections import deque
 import os
+from collections import deque
 
 import keras
-from keras.callbacks import LambdaCallback, LearningRateScheduler, TerminateOnNaN
 import numpy as np
-
 from data import BEATLES, CNN
+from keras.callbacks import (LambdaCallback, LearningRateScheduler,
+                             TerminateOnNaN)
 from model import Transformer
-
-
 
 # model params
 n_heads = 8
-encoder_layers = decoder_layers = 1
+encoder_layers = decoder_layers = 2
 d_model = 64 * n_heads
-sequence_len = 150
+sequence_len = 100
 layer_normalization = True
 dropout = True
 residual_connections = True
@@ -25,10 +23,12 @@ batch_size = 30
 warmup_steps = 1000
 optimizer = keras.optimizers.adam(beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 logfile = 'train.log'
-batch_steps = 3
+step_size = 1
+tokenizer = 'words'
 training_data = BEATLES(encoder_len=sequence_len, decoder_len=sequence_len,
-                        batch_size=batch_size, step_size=batch_steps)
-vocab_size = training_data.VOCAB_SIZE + 1
+                        batch_size=batch_size, step_size=step_size,
+                        tokenizer=tokenizer)
+vocab_size = training_data.vocab_size + 1
 
 model = Transformer(
         n_heads=n_heads, encoder_layers=encoder_layers, decoder_layers=decoder_layers,
@@ -37,20 +37,23 @@ model = Transformer(
         residual_connections=residual_connections)
 
 
-def generate_text(epoch, logs, mode='random'):
-    i = np.random.randint(vocab_size)
-    x = np.zeros((1, sequence_len))
-    terminate = training_data.CHAR_MAP[training_data.END]
-    next_idx = -1
-    text = ''.join(training_data.IDX_MAP[i] for i in x[0])
-    while next_idx != terminate and len(text) < 2000:
-        pred = model.predict([x, x])
+def generate_text(epoch, logs):
+    x1 = training_data.text_to_x('', encoder=True).reshape((1, -1))
+    x2 = training_data.text_to_x('', encoder=False).reshape((1, -1))
+    x = [x1, x2]
+    char = -1
+    text = ''
+    while char != training_data.END and len(text) < 2000:
+        pred = model.predict(x)
         probs = pred[0][-1]
-        next_idx = np.random.choice(range(len(probs)), p=probs)
-        text += training_data.IDX_MAP[next_idx]
+        idx = np.random.choice(range(len(probs)), p=probs)
+        char = training_data.idx_to_char(idx)
+        text += char
         # shift elements backward
-        x = np.roll(x, -1)
-        x[0, -1] = next_idx
+        x1, x2 = x
+        x2 = np.roll(x2, -1)
+        x2[0, -1] = idx
+        x = [x1, x2]
     remove = [training_data.START, training_data.END, training_data.UNKOWN]
     for rm in remove:
         text = text.replace(rm, '')
@@ -81,6 +84,7 @@ if __name__ == '__main__':
         # clear log file
         with open(logfile, 'w'):
             pass
+    model.summary()
     model.compile(loss='categorical_crossentropy', optimizer=optimizer)
     try:
         model.fit_generator(gen, steps_per_epoch=len(training_data.files)*10,
