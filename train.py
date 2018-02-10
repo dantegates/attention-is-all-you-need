@@ -82,7 +82,7 @@ def lr_schedule(epoch):
     return lr
 
 callbacks = []
-#callbacks.append(LambdaCallback(on_epoch_end=generate_text))
+callbacks.append(LambdaCallback(on_epoch_end=generate_text))
 callbacks.append(LearningRateScheduler(lr_schedule))
 callbacks.append(TerminateOnNaN())
 callbacks.append(ModelCheckpoint(filepath='model.h5'))
