@@ -59,8 +59,8 @@ def generate_text(epoch, logs):
         token = batch_generator.idx_to_char(idx)
         tokens.append(token)
         if token == '\n':
-            x1 = batch_generator.tokens_to_x(tokens)
-            x2 = batch_generator.tokens_to_x([])
+            x1 = batch_generator.tokens_to_x(tokens).reshape((1, -1))
+            x2 = batch_generator.tokens_to_x([]).reshape((1, -1))
         else:
             # shift elements backward
             x1, x2 = x
