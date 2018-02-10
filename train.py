@@ -10,9 +10,9 @@ from model import Transformer
 
 # model params
 n_heads = 8
-encoder_layers = decoder_layers = 4
+encoder_layers = decoder_layers = 6
 d_model = 64 * n_heads
-sequence_len = 150
+sequence_len = 200
 layer_normalization = True
 dropout = True
 residual_connections = True
