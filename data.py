@@ -93,8 +93,9 @@ class BatchGenerator:
         if self.tokenizer == 'chars':
             tokens = list(text)
         elif self.tokenizer == 'words':
-            for p in string.punctuation:
+            for p in string.punctuation.replace("'", ''):
                 text = text.replace(p, ' %s ' % p)
+            text = text.replace('\n', ' \n ')
             tokens = [s.strip() for s in text.split(' ')]
             tokens = list(itertools.chain(tokens))
         else:
