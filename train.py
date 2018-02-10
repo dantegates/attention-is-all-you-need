@@ -10,7 +10,7 @@ from model import Transformer
 
 # model params
 n_heads = 8
-encoder_layers = decoder_layers = 6
+encoder_layers = decoder_layers = 1
 d_model = 64 * n_heads
 sequence_len = 200
 layer_normalization = True
@@ -25,7 +25,7 @@ optimizer = keras.optimizers.adam(beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 logfile = 'train.log'
 step_size = 1
 tokenizer = 'words'
-batch_generator = BEATLES(encoder_len=sequence_len, decoder_len=sequence_len,
+batch_generator = BEATLES(sequence_len=sequence_len,
                         batch_size=batch_size, step_size=step_size,
                         tokenizer=tokenizer)
 vocab_size = batch_generator.vocab_size + 1
@@ -41,6 +41,7 @@ def generate_text(epoch, logs, method='random'):
     token = object()
     seed = np.random.randint(len(batch_generator.examples))
     tokens, line_tokens, _ = batch_generator.examples[seed]
+    tokens, line_tokens = tokens[:], line_tokens[:]
     x1 = batch_generator.tokens_to_x(tokens).reshape((1, -1))
     x2 = batch_generator.tokens_to_x(line_tokens).reshape((1, -1))
     x = [x1, x2]
