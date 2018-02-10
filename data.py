@@ -29,39 +29,39 @@ class BatchGenerator:
 
         self.examples = self.fetch_examples()
         self.n_batches = (len(self.examples)-1) // self.batch_size
-        self.tokens = self.init_tokens()
-
+        
+        tokens = self.init_tokens()
         self.char_map = {
             self.PAD: 0,
             self.END: 1,
             self.UNKOWN: 2,
         }
         self.idx_map = {i: c for c, i in self.char_map.items()}
-        self.char_map.update((c, i) for i, c in enumerate(self.tokens, start=max(self.idx_map)+1))
-        self.idx_map.update((i, c) for i, c in enumerate(self.tokens, start=max(self.idx_map)+1))
-        self.vocab_size = len(self.char_map)
+        self.char_map.update((c, i) for i, c in enumerate(tokens, start=max(self.idx_map)+1))
+        self.idx_map.update((i, c) for c, i in self.char_map.items())
+        self.tokens = sorted(self.char_map)
+        self.vocab_size = len(self.tokens)
 
         self.skipped = set()
 
     def __iter__(self):
         while True:
             random.shuffle(self.examples)
-            x1 = np.zeros((self.batch_size+1, self.encoder_len))
-            x2 = np.zeros((self.batch_size+1, self.decoder_len))
-            y = np.zeros((self.batch_size+1, self.decoder_len, self.vocab_size+1))
-            for i, (context, target) in enumerate(self.examples):
+            x1 = np.zeros((self.batch_size, self.encoder_len))
+            x2 = np.zeros((self.batch_size, self.decoder_len))
+            y = np.zeros((self.batch_size, self.decoder_len, self.vocab_size+1))
+            for i, (ex1, ex2, target) in enumerate(self.examples):
                 i = i % self.batch_size
-                x1[i, :] = self.tokens_to_x(context)
-                x2[i, :] = self.tokens_to_x(target)
-                y[i+1,:,:] = self.tokens_to_y(target)
+                x1[i, :] = self.tokens_to_x(ex1)
+                x2[i, :] = self.tokens_to_x(ex2)
+                y[i,:,:] = self.tokens_to_y(target)
                 if i == self.batch_size-1:
-                    # offset x/y
-                    yield [x1[:-1], x2[:-1]], y[1:]
-                    x1 = np.zeros((self.batch_size+1, self.encoder_len))
-                    x2 = np.zeros((self.batch_size+1, self.decoder_len))
-                    y = np.zeros((self.batch_size+1, self.decoder_len, self.vocab_size+1))
+                    yield [x1, x2], y
+                    x1 = np.zeros((self.batch_size, self.encoder_len))
+                    x2 = np.zeros((self.batch_size, self.decoder_len))
+                    y = np.zeros((self.batch_size, self.decoder_len, self.vocab_size+1))
 
-    def fetch_content(self):
+    def fetch_file_content(self):
         for file in self.files:
             with open(file) as f:
                 content = f.read() + self.END
@@ -73,18 +73,18 @@ class BatchGenerator:
 
     def fetch_examples(self):
         examples = []
-        for content in self.fetch_content():
-            lines = content.split('\n')
+        for file_content in self.fetch_file_content():
+            lines = file_content.split('\n')
             for i in range(len(lines)):
-                context_text, target_text = '\n'.join(lines[:i]) + '\n', lines[i] + '\n'
-                context_tokens = self.tokenize(context_text)
-                context = context_tokens[-self.encoder_len:]
+                context_text, target_text = '\n'.join(lines[:i]), lines[i] + '\n'
+                if context_text:
+                    context_text += '\n'
+                x1 = self.tokenize(context_text)[-self.encoder_len:]
                 target_tokens = self.tokenize(target_text)
-                for j in range(1, len(target_tokens)+1, self.step_size):
-                    target = target_tokens[:j]
-                    logger.debug('fetched context: %r', context)
-                    logger.debug('feteched target: %r', target)
-                    examples.append((context, target))
+                for j in range(0, len(target_tokens), self.step_size):
+                    x2 = target_tokens[:j]
+                    y = target_tokens[:j+1]
+                    examples.append((x1, x2, y))
         return examples
 
     def tokenize(self, text):
@@ -125,9 +125,10 @@ class BatchGenerator:
 
     def init_tokens(self):
         tokens = set()
-        for context, target in self.examples:
-            tokens.update(context)
-            tokens.update(target)
+        for x1, x2, y in self.examples:
+            tokens.update(x1)
+            tokens.update(x2)
+            tokens.update(y)
         return sorted(tokens)
 
 
