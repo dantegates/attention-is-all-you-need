@@ -27,6 +27,7 @@ class BatchGenerator:
         self.tokenizer = tokenizer
 
         self.examples = self.fetch_examples()
+        self.test_example = self.examples[10]  # before shuffle
         self.n_batches = (len(self.examples)-1) // self.batch_size
         
         tokens = self.init_tokens()
@@ -103,14 +104,14 @@ class BatchGenerator:
 
     def tokens_to_x(self, tokens):
         while len(tokens) < self.sequence_len:
-            tokens.append(self.PAD)
+            tokens.insert(0, self.PAD)
         logger.debug('x tokens: %r', tokens)
         x = np.array([self.char_map[c] for c in tokens])
         return x
 
     def tokens_to_y(self, tokens):
         while len(tokens) < self.sequence_len:
-            tokens.append(self.PAD)
+            tokens.insert(0, self.PAD)
         y = np.zeros((self.sequence_len, self.vocab_size+1))
         logger.debug('y tokens: %r', tokens)
         for i, c in enumerate(tokens):
