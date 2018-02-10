@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class BatchGenerator:
-    START = '<start>'
+    PAD = '<pad>'
     END = '\a'  # this needs to be a single ascii character to make
                 # tokenizing simple
     UNKOWN = '<unk>'
@@ -33,7 +33,7 @@ class BatchGenerator:
         self.tokens = self.init_tokens()
 
         self.char_map = {
-            self.START: 0,
+            self.PAD: 0,
             self.END: 1,
             self.UNKOWN: 2,
         }
@@ -106,7 +106,7 @@ class BatchGenerator:
         tokens = collections.deque(tokens)
         sequence_len = self.encoder_len
         while len(tokens) < sequence_len:
-            tokens.appendleft(self.START)
+            tokens.appendleft(self.PAD)
         logger.debug('x tokens: %r', tokens)
         x = np.array([self.char_map[c] for c in tokens])
         return x
@@ -115,7 +115,7 @@ class BatchGenerator:
         tokens = collections.deque(tokens)
         sequence_len = self.decoder_len
         while len(tokens) < sequence_len:
-            tokens.appendleft(self.START)
+            tokens.appendleft(self.PAD)
         y = np.zeros((sequence_len, self.vocab_size+1))
         logger.debug('y tokens: %r', tokens)
         for i, c in enumerate(tokens):

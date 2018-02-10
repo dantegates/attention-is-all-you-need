@@ -69,7 +69,7 @@ def generate_text(epoch, logs):
         x = [x1, x2]
 
     # remove special tokens
-    remove = [batch_generator.START, batch_generator.END, batch_generator.UNKOWN]
+    remove = [batch_generator.PAD, batch_generator.END, batch_generator.UNKOWN]
     text = ' '.join(t for t in tokens if not t in remove)
     with open(logfile, 'a') as f:
         f.write('epoch: %d, loss=%s\n' % (epoch, logs['loss']))
