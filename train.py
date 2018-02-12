@@ -87,7 +87,7 @@ def lr_schedule(epoch):
     return lr
 
 callbacks = []
-#callbacks.append(LambdaCallback(on_epoch_end=generate_text))
+callbacks.append(LambdaCallback(on_epoch_end=generate_text))
 callbacks.append(LearningRateScheduler(lr_schedule))
 callbacks.append(TerminateOnNaN())
 callbacks.append(ModelCheckpoint(filepath='model.h5'))
@@ -111,7 +111,7 @@ if __name__ == '__main__':
     model.summary()
     model.compile(loss=loss, optimizer=optimizer)
     try:
-        model.fit_generator(gen, steps_per_epoch=len(batch_generator.files)*10,
+        model.fit_generator(gen, steps_per_epoch=batch_generator.n_batches,
                             epochs=epochs, callbacks=callbacks)
     except KeyboardInterrupt:
         pass
