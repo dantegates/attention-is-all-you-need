@@ -10,7 +10,7 @@ from model import Transformer
 
 # model params
 n_heads = 8
-encoder_layers = decoder_layers = 1
+encoder_layers = decoder_layers = 6
 d_model = 64 * n_heads
 sequence_len = 200
 layer_normalization = True
@@ -18,7 +18,7 @@ dropout = True
 residual_connections = True
 
 # training params
-epochs = 100
+epochs = 250
 batch_size = 30
 warmup_steps = 1000
 optimizer = keras.optimizers.adam(beta_1=0.9, beta_2=0.98, epsilon=1e-9)
@@ -85,7 +85,7 @@ def lr_schedule(epoch):
     return lr
 
 callbacks = []
-callbacks.append(LambdaCallback(on_epoch_end=generate_text))
+#callbacks.append(LambdaCallback(on_epoch_end=generate_text))
 callbacks.append(LearningRateScheduler(lr_schedule))
 callbacks.append(TerminateOnNaN())
 callbacks.append(ModelCheckpoint(filepath='model.h5'))
