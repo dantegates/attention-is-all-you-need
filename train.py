@@ -10,7 +10,7 @@ from model import Transformer
 
 # model params
 n_heads = 8
-encoder_layers = decoder_layers = 6
+encoder_layers = decoder_layers = 8
 d_model = 64 * n_heads
 sequence_len = 200
 layer_normalization = True
