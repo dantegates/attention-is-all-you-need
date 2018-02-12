@@ -21,7 +21,7 @@ class BatchGenerator:
                  step_size, tokenizer='chars'):
         self.sequence_len = sequence_len
         self.directory = directory
-        self.files = glob.glob(os.path.join(self.directory, '*%s' % extension))[:1]
+        self.files = glob.glob(os.path.join(self.directory, '*%s' % extension))
         self.batch_size = batch_size
         self.step_size = step_size
         self.tokenizer = tokenizer
@@ -104,14 +104,14 @@ class BatchGenerator:
 
     def tokens_to_x(self, tokens):
         while len(tokens) < self.sequence_len:
-            tokens.insert(0, self.PAD)
+            tokens = [self.PAD] + tokens
         logger.debug('x tokens: %r', tokens)
         x = np.array([self.char_map[c] for c in tokens])
         return x
 
     def tokens_to_y(self, tokens):
         while len(tokens) < self.sequence_len:
-            tokens.insert(0, self.PAD)
+            tokens = [self.PAD] + tokens
         y = np.zeros((self.sequence_len, self.vocab_size+1))
         logger.debug('y tokens: %r', tokens)
         for i, c in enumerate(tokens):
