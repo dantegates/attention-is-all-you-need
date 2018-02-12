@@ -47,7 +47,9 @@ def generate_text(epoch, logs, method='random'):
     x1 = batch_generator.tokens_to_x(tokens).reshape((1, -1))
     x2 = batch_generator.tokens_to_x(line_tokens).reshape((1, -1))
     x = [x1, x2]
-    while token != batch_generator.END and len(tokens) < sequence_len:
+    while token != batch_generator.END \
+          and len(tokens) < sequence_len \
+          and len(line_tokens) < sequence_len:
         # predict and sample an index according to probability dist.
         pred = model.predict(x)
         probs = pred[0][-1]
