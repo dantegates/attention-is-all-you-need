@@ -1,3 +1,4 @@
+import collections
 import glob
 import logging
 import os
@@ -18,12 +19,13 @@ class BatchGenerator:
     UNKOWN = '<unk>'
 
     def __init__(self, sequence_len, directory, extension, batch_size,
-                 step_size, tokenizer='chars'):
+                 step_size, vocab_size=None, tokenizer='chars'):
         self.sequence_len = sequence_len
         self.directory = directory
         self.files = glob.glob(os.path.join(self.directory, '*%s' % extension))
         self.batch_size = batch_size
         self.step_size = step_size
+        self.vocab_size = vocab_size
         self.tokenizer = tokenizer
 
         self.examples = self.fetch_examples()
@@ -106,7 +108,8 @@ class BatchGenerator:
         while len(tokens) < self.sequence_len:
             tokens = [self.PAD] + tokens
         logger.debug('x tokens: %r', tokens)
-        x = np.array([self.char_map[c] for c in tokens])
+        x = np.array([self.char_map[c] if c in self.char_map else self.char_map[self.UNKOWN]
+                      for c in tokens])
         return x
 
     def tokens_to_y(self, tokens):
@@ -115,7 +118,7 @@ class BatchGenerator:
         y = np.zeros((self.sequence_len, self.vocab_size+1))
         logger.debug('y tokens: %r', tokens)
         for i, c in enumerate(tokens):
-            idx = self.char_map[c]
+            idx = self.char_map[c] if c in self.char_map else self.char_map[self.UNKOWN]
             y[i][idx] = 1
         return y
 
@@ -123,12 +126,12 @@ class BatchGenerator:
         return self.idx_map[idx] if idx in self.idx_map else self.UNKOWN
 
     def init_tokens(self):
-        tokens = set()
+        tokens = collections.Counter()
         for x1, x2, y in self.examples:
             tokens.update(x1)
             tokens.update(x2)
             tokens.update(y)
-        return sorted(tokens)
+        return sorted([item for item, count in tokens.most_common(self.vocab_size)])
 
 
 LYRICS = partial(BatchGenerator, directory='lyrics', extension='.txt')
