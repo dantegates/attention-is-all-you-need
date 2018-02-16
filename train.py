@@ -3,7 +3,7 @@ from collections import deque
 
 import keras
 import numpy as np
-from data import BEATLES, CNN
+from data import BEATLES, CNN, LYRICS
 from keras.callbacks import (LambdaCallback, LearningRateScheduler,
                              TerminateOnNaN, ModelCheckpoint)
 from model import Transformer
@@ -90,7 +90,7 @@ callbacks = []
 callbacks.append(LambdaCallback(on_epoch_end=generate_text))
 callbacks.append(LearningRateScheduler(lr_schedule))
 callbacks.append(TerminateOnNaN())
-callbacks.append(ModelCheckpoint(filepath='model.h5'))
+callbacks.append(ModelCheckpoint(filepath='model.h5', period=1, save_weights_only=True))
 
 # for debugging. e.g. if loss turns to NaN, batches[0] will contain batch
 # that caused the NaN
