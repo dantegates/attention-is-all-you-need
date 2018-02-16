@@ -131,5 +131,6 @@ class BatchGenerator:
         return sorted(tokens)
 
 
+LYRICS = partial(BatchGenerator, directory='lyrics', extension='.txt')
 BEATLES = partial(BatchGenerator, directory='beatles', extension='.txt')
 CNN = partial(BatchGenerator, directory='cnn/**', extension='.story')
