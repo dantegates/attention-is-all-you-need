@@ -1,3 +1,4 @@
+import bisect
 import collections
 import glob
 import logging
@@ -8,6 +9,7 @@ import itertools
 from functools import partial
 
 import numpy as np
+
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +29,10 @@ class BatchGenerator:
         self.step_size = step_size
         self.tokenizer = tokenizer
 
-        self.examples = self.fetch_examples()
-        self.test_example = self.examples[10]  # before shuffle
-        self.n_batches = (len(self.examples)-1) // self.batch_size
+        self.corpi = self.tokenize_corpi()
+        self.example_map = list(itertools.accumulate(len(tokens) for tokens in self.corpi))
+        self.n_examples = self.example_map[-1]
+        self.n_batches = self.n_examples // self.batch_size
         
         tokens = self.init_tokens(vocab_size)
         self.char_map = {
@@ -51,7 +54,7 @@ class BatchGenerator:
             x1 = np.zeros((self.batch_size, self.sequence_len))
             x2 = np.zeros((self.batch_size, self.sequence_len))
             y = np.zeros((self.batch_size, self.sequence_len, self.vocab_size+1))
-            for i, (ex1, ex2, target) in enumerate(self.examples):
+            for i, (ex1, ex2, target) in enumerate(self.fetch_examples()):
                 i = i % self.batch_size
                 x1[i, :] = self.tokens_to_x(ex1)
                 x2[i, :] = self.tokens_to_x(ex2)
@@ -60,9 +63,8 @@ class BatchGenerator:
                     yield [x1, x2], y
                     x1 = np.zeros((self.batch_size, self.sequence_len))
                     x2 = np.zeros((self.batch_size, self.sequence_len))
-                    y = np.zeros((self.batch_size, self.sequence_len, self.vocab_size+1))                    
-
-
+                    y = np.zeros((self.batch_size, self.sequence_len, self.vocab_size+1))
+                    
     def fetch_file_content(self):
         for file in self.files:
             with open(file) as f:
@@ -74,20 +76,23 @@ class BatchGenerator:
                 yield content
 
     def fetch_examples(self):
-        examples = []
+        positions = list(range(self.n_examples))
+        np.random.shuffle(positions)
+        for p in positions:
+            corpus_pos = bisect.bisect_right(self.example_map, p)
+            corpus = self.corpi[corpus_pos]
+            i = p - self.example_map[corpus_pos]
+            start = i - self.sequence_len
+            x1 = corpus[start:i]
+            x2 = corpus[start:i]
+            y = corpus[start:i+1]
+            yield x1, x2, y
+
+    def tokenize_corpi(self):
+        tokens = []
         for file_content in self.fetch_file_content():
-            lines = file_content.split('\n')
-            for i in range(len(lines)):
-                context_text, target_text = '\n'.join(lines[:i]), lines[i] + '\n'
-                if context_text:
-                    context_text += '\n'
-                x1 = self.tokenize(context_text)[-self.sequence_len:]
-                target_tokens = self.tokenize(target_text)
-                for j in range(0, len(target_tokens), self.step_size):
-                    x2 = target_tokens[:j]
-                    y = target_tokens[:j+1]
-                    examples.append((x1, x2, y))
-        return examples
+            tokens.append(self.tokenize(file_content))
+        return tokens
 
     def tokenize(self, text):
         tokens = []
@@ -125,12 +130,10 @@ class BatchGenerator:
         return self.idx_map[idx] if idx in self.idx_map else self.UNKOWN
 
     def init_tokens(self, maxsize):
-        tokens = collections.Counter()
-        for x1, x2, y in self.examples:
-            tokens.update(x1)
-            tokens.update(x2)
-            tokens.update(y)
-        return sorted([item for item, count in tokens.most_common(maxsize)])
+        all_tokens = collections.Counter()
+        for corpus in self.corpi:
+            all_tokens.update(corpus)
+        return sorted([item for item, count in all_tokens.most_common(maxsize)])
 
 
 LYRICS = partial(BatchGenerator, directory='lyrics', extension='.txt')
