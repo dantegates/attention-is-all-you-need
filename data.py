@@ -25,14 +25,13 @@ class BatchGenerator:
         self.files = glob.glob(os.path.join(self.directory, '*%s' % extension))
         self.batch_size = batch_size
         self.step_size = step_size
-        self.vocab_size = vocab_size
         self.tokenizer = tokenizer
 
         self.examples = self.fetch_examples()
         self.test_example = self.examples[10]  # before shuffle
         self.n_batches = (len(self.examples)-1) // self.batch_size
         
-        tokens = self.init_tokens()
+        tokens = self.init_tokens(vocab_size)
         self.char_map = {
             self.PAD: 0,
             self.END: 1,
@@ -125,13 +124,13 @@ class BatchGenerator:
     def idx_to_char(self, idx):
         return self.idx_map[idx] if idx in self.idx_map else self.UNKOWN
 
-    def init_tokens(self):
+    def init_tokens(self, maxsize):
         tokens = collections.Counter()
         for x1, x2, y in self.examples:
             tokens.update(x1)
             tokens.update(x2)
             tokens.update(y)
-        return sorted([item for item, count in tokens.most_common(self.vocab_size)])
+        return sorted([item for item, count in tokens.most_common(maxsize)])
 
 
 LYRICS = partial(BatchGenerator, directory='lyrics', extension='.txt')
