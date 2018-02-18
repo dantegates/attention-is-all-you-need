@@ -50,7 +50,6 @@ class BatchGenerator:
 
     def __iter__(self):
         while True:
-            random.shuffle(self.examples)
             x1 = np.zeros((self.batch_size, self.sequence_len))
             x2 = np.zeros((self.batch_size, self.sequence_len))
             y = np.zeros((self.batch_size, self.sequence_len, self.vocab_size+1))
@@ -76,7 +75,7 @@ class BatchGenerator:
                 yield content
 
     def fetch_examples(self):
-        positions = list(range(self.n_examples))
+        positions = list(range(0, self.n_examples, self.step_size))
         np.random.shuffle(positions)
         for p in positions:
             corpus_pos = bisect.bisect_right(self.example_map, p)
@@ -85,7 +84,7 @@ class BatchGenerator:
             start = i - self.sequence_len
             x1 = corpus[start:i]
             x2 = corpus[start:i]
-            y = corpus[start:i+1]
+            y = corpus[start+1:i+1]
             yield x1, x2, y
 
     def tokenize_corpi(self):
