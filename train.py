@@ -3,7 +3,7 @@ from collections import deque
 
 import keras
 import numpy as np
-from data import BEATLES, CNN, LYRICS
+from data import BEATLES, CNN, LYRICS_TRAIN, LYRICS_TEST
 from keras.callbacks import (LambdaCallback, LearningRateScheduler,
                              TerminateOnNaN, ModelCheckpoint)
 from model import Transformer
@@ -26,9 +26,14 @@ logfile = 'lyrics_train.log'
 step_size = 3
 tokenizer = 'words'
 max_vocab_size = 8000 # redefined later
-batch_generator = LYRICS(sequence_len=sequence_len,
-                        batch_size=batch_size, step_size=step_size,
-                         tokenizer=tokenizer, vocab_size=max_vocab_size)
+batch_generator = LYRICS_TRAIN(
+    sequence_len=sequence_len,
+    batch_size=batch_size, step_size=step_size,
+    tokenizer=tokenizer, vocab_size=max_vocab_size)
+batch_generator_test = LYRICS_TEST(
+    sequence_len=sequence_len,
+    batch_size=batch_size, step_size=step_size,
+    tokenizer=tokenizer, vocab_size=max_vocab_size)
 vocab_size = batch_generator.vocab_size + 1
 
 model = Transformer(
@@ -97,7 +102,7 @@ callbacks.append(ModelCheckpoint(filepath='lyrics_model.h5', period=1, save_weig
 # that caused the NaN
 batches = deque(maxlen=2)
 gen = (i for i in batch_generator)
-
+gen_test = (i for i in batch_generator_test)
 
 from keras import backend as K
 def loss(y_true, y_pred):
@@ -113,7 +118,9 @@ if __name__ == '__main__':
     model.compile(loss=loss, optimizer=optimizer)
     try:
         model.fit_generator(gen, steps_per_epoch=batch_generator.n_batches,
-                            epochs=epochs, callbacks=callbacks)
+                            epochs=epochs, callbacks=callbacks,
+                            validation_data=gen_test,
+                            validation_steps=batch_generator_test.n_batches)
     except KeyboardInterrupt:
         pass
 model.save('lyrics_model.h5')
