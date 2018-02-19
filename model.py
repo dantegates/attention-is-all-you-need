@@ -437,6 +437,14 @@ if __name__ == '__main__':
         sp.call(['dot', '-Tpng', 'model.dot', '-o', 'model.png'])
         sp.call(['open', 'model.png'])
     if cli.save_model:
+        X = np.random.randint(0, vocab_size, size=sequence_len)
+        X = [X, X]
+        p1 = model.predict(X)
         model.save('test_model_save.h5')
         # so far this is an unsatisfying, solution.
+        model = Transformer(
+            n_heads=n_heads, encoder_layers=encoder_layers, decoder_layers=decoder_layers,
+            d_model=d_model, vocab_size=vocab_size, sequence_len=sequence_len)
         model.load_weights('test_model_save.h5')
+        p2 = model.predict(X)
+        assert (p1 == p2).all(), 'weights not saved and/or loaded properly'
