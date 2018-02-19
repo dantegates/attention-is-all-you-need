@@ -29,6 +29,7 @@ class BatchGenerator:
         self.step_size = step_size
         self.tokenizer = tokenizer
 
+
         self.corpi = self.tokenize_corpi()
         self.example_map = list(itertools.accumulate(len(tokens) for tokens in self.corpi))
         self.n_examples = self.example_map[-1]
@@ -135,6 +136,7 @@ class BatchGenerator:
         return sorted([item for item, count in all_tokens.most_common(maxsize)])
 
 
-LYRICS = partial(BatchGenerator, directory='lyrics', extension='.txt')
+LYRICS_TRAIN = partial(BatchGenerator, directory='lyrics-train', extension='.txt')
+LYRICS_TEST = partial(BatchGenerator, directory='lyrics-test', extension='.txt')
 BEATLES = partial(BatchGenerator, directory='beatles', extension='.txt')
 CNN = partial(BatchGenerator, directory='cnn/**', extension='.story')

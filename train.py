@@ -10,7 +10,7 @@ from model import Transformer
 
 # model params
 n_heads = 8
-encoder_layers = decoder_layers = 8
+encoder_layers = decoder_layers = 6
 d_model = 64 * n_heads
 sequence_len = 200
 layer_normalization = True
@@ -22,12 +22,13 @@ epochs = 250
 batch_size = 30
 warmup_steps = 1000
 optimizer = keras.optimizers.adam(beta_1=0.9, beta_2=0.98, epsilon=1e-9)
-logfile = 'train.log'
-step_size = 1
+logfile = 'lyrics_train.log'
+step_size = 3
 tokenizer = 'words'
-batch_generator = BEATLES(sequence_len=sequence_len,
+max_vocab_size = 8000 # redefined later
+batch_generator = LYRICS(sequence_len=sequence_len,
                         batch_size=batch_size, step_size=step_size,
-                        tokenizer=tokenizer)
+                         tokenizer=tokenizer, vocab_size=max_vocab_size)
 vocab_size = batch_generator.vocab_size + 1
 
 model = Transformer(
@@ -90,7 +91,7 @@ callbacks = []
 callbacks.append(LambdaCallback(on_epoch_end=generate_text))
 callbacks.append(LearningRateScheduler(lr_schedule))
 callbacks.append(TerminateOnNaN())
-callbacks.append(ModelCheckpoint(filepath='model.h5', period=1, save_weights_only=True))
+callbacks.append(ModelCheckpoint(filepath='lyrics_model.h5', period=1, save_weights_only=True))
 
 # for debugging. e.g. if loss turns to NaN, batches[0] will contain batch
 # that caused the NaN
@@ -115,4 +116,4 @@ if __name__ == '__main__':
                             epochs=epochs, callbacks=callbacks)
     except KeyboardInterrupt:
         pass
-model.save('model.h5')
+model.save('lyrics_model.h5')
