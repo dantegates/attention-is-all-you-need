@@ -21,21 +21,22 @@ class BatchGenerator:
     UNKOWN = '<unk>'
 
     def __init__(self, sequence_len, directory, extension, batch_size,
-                 step_size, vocab_size=None, tokenizer='chars'):
+                 step_size=1, delimiter=None, max_vocab_size=None, tokenizer='chars'):
         self.sequence_len = sequence_len
         self.directory = directory
         self.files = glob.glob(os.path.join(self.directory, '*%s' % extension))
         self.batch_size = batch_size
         self.step_size = step_size
+        self.delimiter = delimiter
         self.tokenizer = tokenizer
 
-
-        self.corpi = self.tokenize_corpi()
-        self.example_map = list(itertools.accumulate(len(tokens) for tokens in self.corpi))
+        self.encoder_corpi, self.decoder_corpi = self.tokenize_corpi()
+        self.example_map = list(itertools.accumulate(len(tokens)
+                                for tokens in self.decoder_corpi))
         self.n_examples = self.example_map[-1]
         self.n_batches = self.n_examples // self.batch_size
         
-        tokens = self.init_tokens(vocab_size)
+        tokens = self.init_tokens(max_vocab_size)
         self.char_map = {
             self.PAD: 0,
             self.END: 1,
@@ -68,31 +69,54 @@ class BatchGenerator:
     def fetch_file_content(self):
         for file in self.files:
             with open(file) as f:
+                # print(file)
                 content = f.read() + self.END
                 if len(content) < self.batch_size:
                     if not file in self.skipped:
                         print('skipping', file)
                         self.skipped.add(file)
-                yield content
+                        continue
+                if self.delimiter is not None:
+                    encoder_input, decoder_input = content.split(self.delimiter)
+                else:
+                    encoder_input = decoder_input = content
+                yield encoder_input, decoder_input
 
     def fetch_examples(self):
-        positions = list(range(0, self.n_examples, self.step_size))
-        np.random.shuffle(positions)
-        for p in positions:
-            corpus_pos = bisect.bisect_right(self.example_map, p)
-            corpus = self.corpi[corpus_pos]
-            i = p - self.example_map[corpus_pos]
-            start = i - self.sequence_len
-            x1 = corpus[start:i]
-            x2 = corpus[start:i]
-            y = corpus[start+1:i+1]
+        example_positions = list(range(0, self.n_examples, self.step_size))
+        np.random.shuffle(example_positions)
+        for example_position in example_positions:
+            # This gives us the index for the "bucket" containing the
+            # target example. Note the encoder and decoder index is the
+            # same.
+            idx_bucket = bisect.bisect_right(self.example_map, example_position)
+            encoder_tokens = self.encoder_corpi[idx_bucket]
+            decoder_tokens = self.decoder_corpi[idx_bucket]
+
+            # this is the index in the decoder tokens pointing to the
+            # example determined by p
+            p = 0 if idx_bucket == 0 else self.example_map[idx_bucket - 1]
+            idx_target_token = example_position - p
+            x2_start = idx_target_token - self.sequence_len
+            x2_stop = idx_target_token
+            if encoder_tokens == decoder_tokens:
+                x1_start, x1_stop = x2_start, x2_stop
+            else:
+                x1_start, x1_stop = 0, self.sequence_len
+
+            x1 = encoder_tokens[x1_start:x1_stop]
+            x2 = decoder_tokens[x2_start:x2_stop]
+            y = decoder_tokens[x2_start+1:x2_stop+1]
             yield x1, x2, y
 
     def tokenize_corpi(self):
-        tokens = []
+        encoder_tokens = []
+        decoder_tokens = []
         for file_content in self.fetch_file_content():
-            tokens.append(self.tokenize(file_content))
-        return tokens
+            encoder_input, decoder_input = file_content
+            encoder_tokens.append(self.tokenize(encoder_input))
+            decoder_tokens.append(self.tokenize(decoder_input))
+        return encoder_tokens, decoder_tokens
 
     def tokenize(self, text):
         tokens = []
@@ -131,7 +155,7 @@ class BatchGenerator:
 
     def init_tokens(self, maxsize):
         all_tokens = collections.Counter()
-        for corpus in self.corpi:
+        for corpus in itertools.chain(self.encoder_corpi, self.decoder_corpi):
             all_tokens.update(corpus)
         return sorted([item for item, count in all_tokens.most_common(maxsize)])
 
@@ -139,4 +163,5 @@ class BatchGenerator:
 LYRICS_TRAIN = partial(BatchGenerator, directory='lyrics-train', extension='.txt')
 LYRICS_TEST = partial(BatchGenerator, directory='lyrics-test', extension='.txt')
 BEATLES = partial(BatchGenerator, directory='beatles', extension='.txt')
-CNN = partial(BatchGenerator, directory='cnn/**', extension='.story')
+CNN = partial(BatchGenerator, directory='summaries', extension='.story', delimiter='\t')
+SONGNAMES = partial(BatchGenerator, directory='songnames', extension='.txt', delimiter='\t')
