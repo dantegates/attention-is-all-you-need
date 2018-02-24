@@ -1,5 +1,5 @@
 import os
-from collections import deque
+from collections import defaultdict, deque
 
 import keras
 import numpy as np
@@ -43,49 +43,53 @@ model = Transformer(
         residual_connections=residual_connections)
 
 
-def generate_text(epoch, logs, method='random'):
-    remove = [batch_generator.PAD, batch_generator.END, batch_generator.UNKOWN]    
+def generate_text(epoch, logs, n_beams, beam_width=3):
+    remove = [batch_generator_test.PAD, batch_generator_test.END, batch_generator_test.UNKOWN]
     token = object()
-    tokens, line_tokens, _ = batch_generator.test_example
-    tokens, line_tokens = tokens[:], line_tokens[:]
-    tokens, line_tokens = [t for t in tokens if not t in remove], \
-                          [t for t in line_tokens if not t in remove]
-    x1 = batch_generator.tokens_to_x(tokens).reshape((1, -1))
-    x2 = batch_generator.tokens_to_x(line_tokens).reshape((1, -1))
+    encoder_tokens, _, _ = next(batch_generator_test.fetch_examples())
+    # copy the tokens!
+    encoder_tokens, decoder_tokens = encoder_tokens[:], []
+    x1 = batch_generator_test.tokens_to_x(encoder_tokens).reshape((1, -1))
+    x2 = batch_generator_test.tokens_to_x(decoder_tokens).reshape((1, -1))
     x = [x1, x2]
-    while token != batch_generator.END \
-          and len(tokens) < sequence_len \
-          and len(line_tokens) < sequence_len:
+    beams = []
+    while True:
         # predict and sample an index according to probability dist.
-        pred = model.predict(x)
-        probs = pred[0][-1]
-        if method == 'greedy':
-            idx = int(np.argmax(probs))
+        if not beams:
+            pred = model.predict(x)
+            probs = np.log10(pred[0][-1])
+            indices = np.argsort(probs)[:beam_width]
+            for idx in indices:
+                token = batch_generator_test.idx_to_char(idx)
+                p = probs[idx]
+                beams.append(([token], p))
         else:
-            idx = np.random.choice(range(len(probs)), p=probs)
-
-        # convert the index to token
-        # The model is trained on context of all previous lines.
-        # Therefore if token is a newline, reinitialize the context (x1)
-        # and decoder input (x2).
-        #
-        # Otherwise, add idx to the decoder input and leave the encoder
-        # context as is
-        token = batch_generator.idx_to_char(idx)
-        line_tokens.append(token)
-        if token == '\n':
-            tokens.extend(line_tokens)
-            line_tokens = []
-        x1 = batch_generator.tokens_to_x(tokens).reshape((1, -1))
-        x2 = batch_generator.tokens_to_x(line_tokens).reshape((1, -1))
-        x = [x1, x2]
-    tokens.extend(line_tokens)
+            new_beams = []
+            unfinished = False
+            for tokens, prob in beams:
+                if tokens[-1] is batch_generator_test.END or \
+                        tokens >= sequence_len:
+                    continue
+                unfinished = True
+                x2 = batch_generator_test.tokens_to_x(tokens).reshape((1, -1))
+                x = [x1, x2]
+                pred = model.predict(x)
+                probs = np.log10(pred[0][-1])
+                indices = np.argsort(probs)[:beam_width]
+                for idx in indices:
+                    token = batch_generator_test.idx_to_char(idx)
+                    p = probs[idx]
+                    new_beams.append((tokens[:] + [token], p*prob))
+            beams = new_beams
+            if not unfinished:
+                break
+    tokens = sorted(beams, lambda x: x[1])[-1]
     # remove special tokens
     text = ' '.join(t for t in tokens if not t in remove)
-    with open(logfile, 'a') as f:
-        f.write('epoch: %d, loss=%s\n' % (epoch, logs['loss']))
-        f.write(text)
-        f.write('\n\n')
+    print('lyrics')
+    print(' '.join(encoder_tokens))
+    print('generated song title:', text)
+
 
 def lr_schedule(epoch):
     epoch += 1
