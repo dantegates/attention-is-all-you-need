@@ -17,7 +17,7 @@ from keras import activations
 from keras.engine.topology import Layer, InputSpec
 from keras.initializers import RandomNormal
 from keras.layers import Add, Dense, Embedding, Input, Dropout
-from keras.models import Model
+from keras.models import Model, load_model
 
 
 # TODO
@@ -30,8 +30,8 @@ logger = logging.getLogger(__name__)
 
 
 class Transformer(Model):
-    def __init__(self, n_heads, sequence_len,
-                 encoder_layers, decoder_layers, d_model, vocab_size,
+    def __init__(self, n_heads=None, sequence_len=None,
+                 encoder_layers=None, decoder_layers=None, d_model=None, vocab_size=None,
                  layer_normalization=True, dropout=True, residual_connections=True):
         # define attributes
         self.n_heads = n_heads
@@ -44,7 +44,6 @@ class Transformer(Model):
         self.dropout = dropout
         self.residual_connections = residual_connections
 
-        # initialize model
         self.encoder_input, self.decoder_input = self.init_input()
         self.encoder_embedding, self.decoder_embedding, self.embedding_weights = self.init_embeddings()
         self.encoder = self.init_encoder()
@@ -158,9 +157,25 @@ class Transformer(Model):
             decoder_layer_input = decoder_sublayer3
         # finally stack a linear transformation with softmax activation
         # to get next token probabilities
-        final_output = SharedWeights(K.transpose(self.embedding_weights), activation='softmax')
-        decoder = final_output(decoder_sublayer3)
-        return decoder
+
+        # final_output = SharedWeights(K.transpose(self.embedding_weights), activation='softmax')
+        # decoder = final_output(decoder_sublayer3)
+        # return decoder
+
+        return decoder_sublayer3
+
+    def get_config(self):
+        config = super().get_config()
+        config['n_heads'] = self.n_heads
+        config['sequence_len'] = self.sequence_len
+        config['encoder_layers'] = self.encoder_layers
+        config['decoder_layers'] = self.decoder_layers
+        config['d_model'] = self.d_model
+        config['vocab_size'] = self.vocab_size
+        config['layer_normalization'] = self.layer_normalization
+        config['dropout'] = self.dropout
+        config['residual_connections'] = self.residual_connections
+        return config
 
 
 class MultiHeadAttention(Layer):
@@ -205,6 +220,13 @@ class MultiHeadAttention(Layer):
             shape = input_shape
         return (shape[0], shape[1], self.d_model)
 
+    def get_config(self):
+        config = super().get_config()
+        config['n_heads'] = self.n_heads
+        config['d_model'] = self.d_model
+        config['masking'] = self.masking
+        return config
+
 
 class Attention(Layer):
     def __init__(self, d_model, d_k, d_v, activation, **kwargs):
@@ -213,6 +235,7 @@ class Attention(Layer):
         self.d_k = d_k
         self.d_v = d_v
         self.scalar = np.sqrt(self.d_k)
+        self._activation = activation
         self.activation = activations.get(activation)
         super().__init__(**kwargs)
 
@@ -268,10 +291,20 @@ class Attention(Layer):
             shape = input_shape
         return (shape[-1], self.d_v)
 
+    def get_config(self):
+        config = super().get_config()
+        config['d_model'] = self.d_model
+        config['d_k'] = self.d_k
+        config['d_v'] = self.d_v
+        config['activation'] = self._activation
+        return config
+
 
 class PositionalEncoding(Layer):
     def __init__(self, d_model, sequence_len, **kwargs):
         super().__init__(**kwargs)
+        self.d_model = d_model
+        self.sequence_len = sequence_len
         self.encoding = self.make_encoding(d_model, sequence_len)
 
     def call(self, inputs):
@@ -288,6 +321,12 @@ class PositionalEncoding(Layer):
     def compute_output_shape(self, input_shape):
         return input_shape
 
+    def get_config(self):
+        config = super().get_config()
+        config['d_model'] = self.d_model
+        config['sequence_len'] = self.sequence_len
+        return config
+
 
 class Scalar(Layer):
     def __init__(self, value, **kwargs):
@@ -300,10 +339,16 @@ class Scalar(Layer):
     def compute_output_shape(self, input_shape):
         return input_shape
 
+    def get_config(self):
+        config = super().get_config()
+        config['value'] = self.value
+        return config
+
 
 class FFN(Layer):
     def __init__(self, units, activation, **kwargs):
         self.units = units
+        self._activation = activation
         self.activation = activations.get(activation)
         self.bias_regularizer = None
         self.bias_constraint = None
@@ -350,10 +395,15 @@ class FFN(Layer):
         output_shape[-1] = self.units
         return tuple(output_shape)
 
+    def get_config(self):
+        config = super().get_config()
+        config['units'] = self.units
+        config['activation'] = self._activation
+
 
 class LayerNormalization(Layer):
-    def __init__(self, epsilon=1e-6, **kwargs):
-        self.epsilon = epsilon
+    def __init__(self, **kwargs):
+        self.epsilon = 1e-6
         super().__init__(**kwargs)
 
     def build(self, input_shape):
@@ -442,9 +492,10 @@ if __name__ == '__main__':
         p1 = model.predict(X)
         model.save('test_model_save.h5')
         # so far this is an unsatisfying, solution.
-        model = Transformer(
-            n_heads=n_heads, encoder_layers=encoder_layers, decoder_layers=decoder_layers,
-            d_model=d_model, vocab_size=vocab_size, sequence_len=sequence_len)
-        model.load_weights('test_model_save.h5')
+        # model = Transformer(
+        #     n_heads=n_heads, encoder_layers=encoder_layers, decoder_layers=decoder_layers,
+        #     d_model=d_model, vocab_size=vocab_size, sequence_len=sequence_len)
+        model = load_model('test_model_save.h5', custom_objects=locals())
         p2 = model.predict(X)
+        print(p1, p2)
         assert (p1 == p2).all(), 'weights not saved and/or loaded properly'
