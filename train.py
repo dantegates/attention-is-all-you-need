@@ -88,11 +88,11 @@ def beam_predict(model, x1, x2, fan_out, beam_width, terminal, max_len):
     return x2
 
 
-def generate_text(epoch, logs, fan_out=3, beam_width=3):
+def generate_text(epoch, logs, n_predictions=10, fan_out=3, beam_width=3):
     # pick a random example to seed predictions
     # make sure to copy the tokens!
     predictions = []
-    for i in range(10):
+    for i in range(n_predictions):
         decoder_tokens = []
         encoder_tokens, _, _ = next(batch_generator_test.fetch_examples())[:]# copy the tokens!
 
@@ -107,17 +107,14 @@ def generate_text(epoch, logs, fan_out=3, beam_width=3):
         # format generated text
         remove = [batch_generator_test.PAD, batch_generator_test.END, batch_generator_test.UNKOWN]
         text = ' '.join(t for t in tokens if not t in remove)
-        predictions.append({'seed': encoder_tokens, 'generated_text': text})
+        predictions.append({'seed': ' '.join(encoder_tokens), 'generated_text': text})
     json_data = {
         'epoch': epoch,
-        'logs': logs,
+        # 'val_loss': logs['val_loss'],
         'predictions': predictions}
     with open(logfile, 'a') as f:
         f.write(json.dumps(json_data))
-
-    print('lyrics')
-    print(' '.join(encoder_tokens))
-    print('generated song title:', text)
+        f.write('\n')
 
 
 def lr_schedule(epoch):
