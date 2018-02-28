@@ -1,12 +1,14 @@
+import json
 import os
 from collections import defaultdict, deque
 
 import keras
 import numpy as np
-from data import BEATLES, CNN, SONGNAMES_TRAIN, SONGNAMES_TEST
+from data import BEATLES, CNN, SONGNAMES_TEST, SONGNAMES_TRAIN
 from keras.callbacks import (LambdaCallback, LearningRateScheduler,
-                             TerminateOnNaN, ModelCheckpoint)
+                             ModelCheckpoint, TerminateOnNaN)
 from model import Transformer
+
 loss = 'categorical_crossentropy'
 
 # model params
