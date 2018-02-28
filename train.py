@@ -3,14 +3,14 @@ from collections import defaultdict, deque
 
 import keras
 import numpy as np
-from data import BEATLES, CNN, LYRICS_TRAIN, LYRICS_TEST
+from data import BEATLES, CNN, SONGNAMES
 from keras.callbacks import (LambdaCallback, LearningRateScheduler,
                              TerminateOnNaN, ModelCheckpoint)
 from model import Transformer
 
 # model params
 n_heads = 8
-encoder_layers = decoder_layers = 6
+encoder_layers = decoder_layers = 2
 d_model = 64 * n_heads
 sequence_len = 200
 layer_normalization = True
@@ -26,14 +26,14 @@ logfile = 'lyrics_train.log'
 step_size = 3
 tokenizer = 'words'
 max_vocab_size = 8000 # redefined later
-batch_generator = LYRICS_TRAIN(
+batch_generator = SONGNAMES(
     sequence_len=sequence_len,
     batch_size=batch_size, step_size=step_size,
-    tokenizer=tokenizer, vocab_size=max_vocab_size)
-batch_generator_test = LYRICS_TEST(
+    tokenizer=tokenizer, max_vocab_size=max_vocab_size)
+batch_generator_test = SONGNAMES(
     sequence_len=sequence_len,
     batch_size=batch_size, step_size=step_size,
-    tokenizer=tokenizer, vocab_size=max_vocab_size)
+    tokenizer=tokenizer, max_vocab_size=max_vocab_size)
 vocab_size = batch_generator.vocab_size + 1
 
 model = Transformer(
@@ -43,48 +43,64 @@ model = Transformer(
         residual_connections=residual_connections)
 
 
-def generate_text(epoch, logs, n_beams, beam_width=3):
-    remove = [batch_generator_test.PAD, batch_generator_test.END, batch_generator_test.UNKOWN]
-    token = object()
-    encoder_tokens, _, _ = next(batch_generator_test.fetch_examples())
-    # copy the tokens!
-    encoder_tokens, decoder_tokens = encoder_tokens[:], []
+def beam_predict(model, x1, x2, fan_out, beam_width, terminal, max_len):
+    def predict(X, n):
+        preds = model.predict(X)
+        # remove batch-shape, take prediction for last item in sequence
+        preds = preds[0][-1]
+        if n > 1:
+            indices = np.argsort(preds)[:n]
+            probs = np.log10(preds[indices])
+            return zip(indices, probs)
+        idx = np.argmax(preds)
+        return idx
+
+    beams = []
+    x = [x1, x2]
+    # beam search to find most likely prediction
+    for _ in range(beam_width):
+        # predict and sample an index according to probability dist.
+        if not beams:
+            for idx, p in predict(x, fan_out):
+                x2 = np.append(x2.copy(), [idx])
+                beams.append((x2, p))
+        else:
+            new_beams = []
+            for x2, prob in beams:
+                x = [x1, x2]
+                for idx, p in predict(x, fan_out):
+                    x2 = np.append(x2.copy(), [idx])
+                    new_beams.append((x2, p*prob))
+            beams = new_beams
+    # take top prediciton
+    x2, _ = sorted(beams, key=lambda x: x[1])[-1]
+
+    # generate the rest of the text given the most likely beam
+    while x2[-1] is not terminal and len(x2) <= max_len:
+        x = [x1, x2]
+        idx = predict(x, 1)
+        x2 = np.append(x2, [idx])
+
+    return x2
+
+
+def generate_text(epoch, logs, fan_out=3, beam_width=3):
+    # pick a random example to seed predictions
+    # make sure to copy the tokens!
+    decoder_tokens = []
+    encoder_tokens, _, _ = next(batch_generator_test.fetch_examples())[:]# copy the tokens!
+
+    # make input for model
     x1 = batch_generator_test.tokens_to_x(encoder_tokens).reshape((1, -1))
     x2 = batch_generator_test.tokens_to_x(decoder_tokens).reshape((1, -1))
     x = [x1, x2]
-    beams = []
-    while True:
-        # predict and sample an index according to probability dist.
-        if not beams:
-            pred = model.predict(x)
-            probs = np.log10(pred[0][-1])
-            indices = np.argsort(probs)[:beam_width]
-            for idx in indices:
-                token = batch_generator_test.idx_to_char(idx)
-                p = probs[idx]
-                beams.append(([token], p))
-        else:
-            new_beams = []
-            unfinished = False
-            for tokens, prob in beams:
-                if tokens[-1] is batch_generator_test.END or \
-                        tokens >= sequence_len:
-                    continue
-                unfinished = True
-                x2 = batch_generator_test.tokens_to_x(tokens).reshape((1, -1))
-                x = [x1, x2]
-                pred = model.predict(x)
-                probs = np.log10(pred[0][-1])
-                indices = np.argsort(probs)[:beam_width]
-                for idx in indices:
-                    token = batch_generator_test.idx_to_char(idx)
-                    p = probs[idx]
-                    new_beams.append((tokens[:] + [token], p*prob))
-            beams = new_beams
-            if not unfinished:
-                break
-    tokens = sorted(beams, lambda x: x[1])[-1]
-    # remove special tokens
+
+    pred = beam_predict(model, x1, x2, fan_out, beam_width, batch_generator_test.END,
+                        sequence_len)
+    tokens = [batch_generator_test.idx_to_char(idx) for idx in pred]
+
+    # format generated text
+    remove = [batch_generator_test.PAD, batch_generator_test.END, batch_generator_test.UNKOWN]
     text = ' '.join(t for t in tokens if not t in remove)
     print('lyrics')
     print(' '.join(encoder_tokens))
@@ -108,9 +124,9 @@ batches = deque(maxlen=2)
 gen = (i for i in batch_generator)
 gen_test = (i for i in batch_generator_test)
 
-from keras import backend as K
-def loss(y_true, y_pred):
-    return K.categorical_crossentropy(y_true[:,-20:,:], y_pred[:,-20:,:])
+# from keras import backend as K
+# def loss(y_true, y_pred):
+#     return K.categorical_crossentropy(y_true[:,-20:,:], y_pred[:,-20:,:])
 
 
 if __name__ == '__main__':
