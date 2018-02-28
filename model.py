@@ -158,11 +158,9 @@ class Transformer(Model):
         # finally stack a linear transformation with softmax activation
         # to get next token probabilities
 
-        # final_output = SharedWeights(K.transpose(self.embedding_weights), activation='softmax')
-        # decoder = final_output(decoder_sublayer3)
-        # return decoder
-
-        return decoder_sublayer3
+        final_output = SharedWeights(K.transpose(self.embedding_weights), activation='softmax')
+        decoder = final_output(decoder_sublayer3)
+        return decoder
 
     def get_config(self):
         config = super().get_config()
