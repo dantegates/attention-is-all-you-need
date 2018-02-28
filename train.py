@@ -3,10 +3,11 @@ from collections import defaultdict, deque
 
 import keras
 import numpy as np
-from data import BEATLES, CNN, LYRICS_TRAIN, LYRICS_TEST
+from data import BEATLES, CNN, SONGNAMES_TRAIN, SONGNAMES_TEST
 from keras.callbacks import (LambdaCallback, LearningRateScheduler,
                              TerminateOnNaN, ModelCheckpoint)
 from model import Transformer
+loss = 'categorical_crossentropy'
 
 # model params
 n_heads = 8
@@ -26,14 +27,14 @@ logfile = 'lyrics_train.log'
 step_size = 3
 tokenizer = 'words'
 max_vocab_size = 8000 # redefined later
-batch_generator = LYRICS_TRAIN(
+batch_generator = SONGNAMES_TRAIN(
     sequence_len=sequence_len,
     batch_size=batch_size, step_size=step_size,
-    tokenizer=tokenizer, vocab_size=max_vocab_size)
-batch_generator_test = LYRICS_TEST(
+    tokenizer=tokenizer, max_vocab_size=max_vocab_size)
+batch_generator_test = SONGNAMES_TEST(
     sequence_len=sequence_len,
     batch_size=batch_size, step_size=step_size,
-    tokenizer=tokenizer, vocab_size=max_vocab_size)
+    tokenizer=tokenizer, max_vocab_size=max_vocab_size)
 vocab_size = batch_generator.vocab_size + 1
 
 model = Transformer(
@@ -43,7 +44,7 @@ model = Transformer(
         residual_connections=residual_connections)
 
 
-def generate_text(epoch, logs, n_beams, beam_width=3):
+def generate_text(epoch, logs, n_beams=3, beam_width=3):
     remove = [batch_generator_test.PAD, batch_generator_test.END, batch_generator_test.UNKOWN]
     token = object()
     encoder_tokens, _, _ = next(batch_generator_test.fetch_examples())
@@ -68,7 +69,7 @@ def generate_text(epoch, logs, n_beams, beam_width=3):
             unfinished = False
             for tokens, prob in beams:
                 if tokens[-1] is batch_generator_test.END or \
-                        tokens >= sequence_len:
+                        len(tokens) >= sequence_len:
                     continue
                 unfinished = True
                 x2 = batch_generator_test.tokens_to_x(tokens).reshape((1, -1))
@@ -108,9 +109,9 @@ batches = deque(maxlen=2)
 gen = (i for i in batch_generator)
 gen_test = (i for i in batch_generator_test)
 
-from keras import backend as K
-def loss(y_true, y_pred):
-    return K.categorical_crossentropy(y_true[:,-20:,:], y_pred[:,-20:,:])
+#from keras import backend as K
+#def loss(y_true, y_pred):
+ #   return K.categorical_crossentropy(y_true[:,-20:,:], y_pred[:,-20:,:])
 
 
 if __name__ == '__main__':
