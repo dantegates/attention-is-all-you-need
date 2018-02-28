@@ -164,4 +164,5 @@ LYRICS_TRAIN = partial(BatchGenerator, directory='lyrics-train', extension='.txt
 LYRICS_TEST = partial(BatchGenerator, directory='lyrics-test', extension='.txt')
 BEATLES = partial(BatchGenerator, directory='beatles', extension='.txt')
 CNN = partial(BatchGenerator, directory='summaries', extension='.story', delimiter='\t')
-SONGNAMES = partial(BatchGenerator, directory='songnames', extension='.txt', delimiter='\t')
+SONGNAMES_TRAIN = partial(BatchGenerator, directory='songnames-train', extension='.txt', delimiter='\t')
+SONGNAMES_TEST = partial(BatchGenerator, directory='songnames-test', extension='.txt', delimiter='\t')

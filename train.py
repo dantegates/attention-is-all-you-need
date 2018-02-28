@@ -3,10 +3,11 @@ from collections import defaultdict, deque
 
 import keras
 import numpy as np
-from data import BEATLES, CNN, SONGNAMES
+from data import BEATLES, CNN, SONGNAMES_TRAIN, SONGNAMES_TEST
 from keras.callbacks import (LambdaCallback, LearningRateScheduler,
                              TerminateOnNaN, ModelCheckpoint)
 from model import Transformer
+loss = 'categorical_crossentropy'
 
 # model params
 n_heads = 8
@@ -22,15 +23,16 @@ epochs = 250
 batch_size = 30
 warmup_steps = 1000
 optimizer = keras.optimizers.adam(beta_1=0.9, beta_2=0.98, epsilon=1e-9)
-logfile = 'lyrics_train.log'
+logfile = 'train-predicitons.txt'
 step_size = 3
 tokenizer = 'words'
 max_vocab_size = 8000 # redefined later
-batch_generator = SONGNAMES(
+
+batch_generator = SONGNAMES_TRAIN(
     sequence_len=sequence_len,
     batch_size=batch_size, step_size=step_size,
     tokenizer=tokenizer, max_vocab_size=max_vocab_size)
-batch_generator_test = SONGNAMES(
+batch_generator_test = SONGNAMES_TEST(
     sequence_len=sequence_len,
     batch_size=batch_size, step_size=step_size,
     tokenizer=tokenizer, max_vocab_size=max_vocab_size)
@@ -87,21 +89,30 @@ def beam_predict(model, x1, x2, fan_out, beam_width, terminal, max_len):
 def generate_text(epoch, logs, fan_out=3, beam_width=3):
     # pick a random example to seed predictions
     # make sure to copy the tokens!
-    decoder_tokens = []
-    encoder_tokens, _, _ = next(batch_generator_test.fetch_examples())[:]# copy the tokens!
+    predictions = []
+    for i in range(10):
+        decoder_tokens = []
+        encoder_tokens, _, _ = next(batch_generator_test.fetch_examples())[:]# copy the tokens!
 
-    # make input for model
-    x1 = batch_generator_test.tokens_to_x(encoder_tokens).reshape((1, -1))
-    x2 = batch_generator_test.tokens_to_x(decoder_tokens).reshape((1, -1))
-    x = [x1, x2]
+        # make input for model
+        x1 = batch_generator_test.tokens_to_x(encoder_tokens).reshape((1, -1))
+        x2 = batch_generator_test.tokens_to_x(decoder_tokens).reshape((1, -1))
 
-    pred = beam_predict(model, x1, x2, fan_out, beam_width, batch_generator_test.END,
-                        sequence_len)
-    tokens = [batch_generator_test.idx_to_char(idx) for idx in pred]
+        pred = beam_predict(model, x1, x2, fan_out, beam_width, batch_generator_test.END,
+                            sequence_len)
+        tokens = [batch_generator_test.idx_to_char(idx) for idx in pred]
 
-    # format generated text
-    remove = [batch_generator_test.PAD, batch_generator_test.END, batch_generator_test.UNKOWN]
-    text = ' '.join(t for t in tokens if not t in remove)
+        # format generated text
+        remove = [batch_generator_test.PAD, batch_generator_test.END, batch_generator_test.UNKOWN]
+        text = ' '.join(t for t in tokens if not t in remove)
+        predictions.append({'seed': encoder_tokens, 'generated_text': text})
+    json_data = {
+        'epoch': epoch,
+        'logs': logs,
+        'predictions': predictions}
+    with open(logfile, 'a') as f:
+        f.write(json.dumps(json_data))
+
     print('lyrics')
     print(' '.join(encoder_tokens))
     print('generated song title:', text)
@@ -123,10 +134,6 @@ callbacks.append(ModelCheckpoint(filepath='lyrics_model.h5', period=1, save_weig
 batches = deque(maxlen=2)
 gen = (i for i in batch_generator)
 gen_test = (i for i in batch_generator_test)
-
-# from keras import backend as K
-# def loss(y_true, y_pred):
-#     return K.categorical_crossentropy(y_true[:,-20:,:], y_pred[:,-20:,:])
 
 
 if __name__ == '__main__':
