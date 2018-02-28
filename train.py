@@ -14,7 +14,7 @@ loss = 'categorical_crossentropy'
 
 # model params
 n_heads = 8
-encoder_layers = decoder_layers = 2
+encoder_layers = decoder_layers = 6
 d_model = 64 * n_heads
 sequence_len = 200
 layer_normalization = True
@@ -54,7 +54,7 @@ def beam_predict(model, x1, x2, fan_out, beam_width, terminal, max_len):
         # remove batch-shape, take prediction for last item in sequence
         preds = preds[0][-1]
         if n > 1:
-            indices = np.argsort(preds)[:n]
+            indices = np.argsort(preds)[::-1][:n]
             probs = np.log10(preds[indices])
             return zip(indices, probs)
         idx = np.argmax(preds)
