@@ -48,18 +48,14 @@ model = Transformer(
         residual_connections=residual_connections)
 
 
-def beam_predict(model, x1, x2, fan_out, beam_width, terminal, max_len):
-    def predict(X, n):
+def beam_predict(model, x1, x2, fan_out, beam_width):
+    def predict(X, top_n):
         preds = model.predict(X)
         # remove batch-shape, take prediction for last item in sequence
         preds = preds[0][-1]
-        if n > 1:
-            indices = np.argsort(preds)[::-1][:n]
-            probs = np.log10(preds[indices])
-            return zip(indices, probs)
-        idx = np.argmax(preds)
-        return idx
-
+        indices = np.argsort(preds)[::-1][:top_n]
+        probs = np.log10(preds[indices])
+        return zip(indices, probs)
     beams = []
     x = [x1, x2]
     # beam search to find most likely prediction
@@ -67,25 +63,18 @@ def beam_predict(model, x1, x2, fan_out, beam_width, terminal, max_len):
         # predict and sample an index according to probability dist.
         if not beams:
             for idx, p in predict(x, fan_out):
-                x2 = np.append(x2.copy(), [idx])
-                beams.append((x2, p))
+                new_x2 = np.append(x2.copy(), [idx])[1:].reshape((1, -1))
+                beams.append((new_x2, p))
         else:
             new_beams = []
             for x2, prob in beams:
                 x = [x1, x2]
                 for idx, p in predict(x, fan_out):
-                    x2 = np.append(x2.copy(), [idx])
-                    new_beams.append((x2, p*prob))
+                    new_x2 = np.append(x2.copy(), [idx])[1:].reshape((1, -1))
+                    new_beams.append((new_x2, p*prob))
             beams = new_beams
-    # take top prediciton
+    # return most likely prediction
     x2, _ = sorted(beams, key=lambda x: x[1])[-1]
-
-    # generate the rest of the text given the most likely beam
-    while x2[-1] is not terminal and len(x2) <= max_len:
-        x = [x1, x2]
-        idx = predict(x, 1)
-        x2 = np.append(x2, [idx])
-
     return x2
 
 
@@ -93,7 +82,7 @@ def generate_text(epoch, logs, n_predictions=10, fan_out=3, beam_width=3):
     # pick a random example to seed predictions
     # make sure to copy the tokens!
     predictions = []
-    for i in range(n_predictions):
+    for _ in range(n_predictions):
         decoder_tokens = []
         encoder_tokens, _, _ = next(batch_generator_test.fetch_examples())[:]# copy the tokens!
 
@@ -101,18 +90,24 @@ def generate_text(epoch, logs, n_predictions=10, fan_out=3, beam_width=3):
         x1 = batch_generator_test.tokens_to_x(encoder_tokens).reshape((1, -1))
         x2 = batch_generator_test.tokens_to_x(decoder_tokens).reshape((1, -1))
 
-        pred = beam_predict(model, x1, x2, fan_out, beam_width, batch_generator_test.END,
-                            sequence_len)
-        tokens = [batch_generator_test.idx_to_char(idx) for idx in pred]
+        x2 = beam_predict(model, x1, x2, fan_out, beam_width)
+        for _ in range(sequence_len - beam_width):
+            if x2[-1] is batch_generator_test.END:
+                break
+            x = [x1, x2]
+            preds = model.predict(x)
+            idx = np.argmax(preds[0][-1])
+            x2 = np.append(x2, [idx])[1:].reshape((1, -1))
+        tokens = [batch_generator_test.idx_to_char(idx) for idx in x2[0]]
 
         # format generated text
         remove = [batch_generator_test.PAD, batch_generator_test.END, batch_generator_test.UNKOWN]
         text = ' '.join(t for t in tokens if not t in remove)
         predictions.append({'seed': ' '.join(encoder_tokens), 'generated_text': text})
     json_data = {
-        'epoch': epoch,
-        # 'val_loss': logs['val_loss'],
-        'predictions': predictions}
+       'epoch': epoch,
+       'val_loss': logs.get('val_loss', -1),
+       'predictions': predictions}
     with open(logfile, 'a') as f:
         f.write(json.dumps(json_data))
         f.write('\n')
