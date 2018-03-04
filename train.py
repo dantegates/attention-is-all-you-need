@@ -31,11 +31,11 @@ step_size = 3
 tokenizer = 'words'
 max_vocab_size = 8000 # redefined later
 
-batch_generator = SONGNAMES_TRAIN(
+batch_generator = BEATLES(
     sequence_len=sequence_len,
     batch_size=batch_size, step_size=step_size,
     tokenizer=tokenizer, max_vocab_size=max_vocab_size)
-batch_generator_test = SONGNAMES_TEST(
+batch_generator_test = BEATLES(
     sequence_len=sequence_len,
     batch_size=batch_size, step_size=step_size,
     tokenizer=tokenizer, max_vocab_size=max_vocab_size)
@@ -71,7 +71,7 @@ def beam_predict(model, x1, x2, fan_out, beam_width):
                 x = [x1, x2]
                 for idx, p in predict(x, fan_out):
                     new_x2 = np.append(x2.copy(), [idx])[1:].reshape((1, -1))
-                    new_beams.append((new_x2, p*prob))
+                    new_beams.append((new_x2, p+prob))
             beams = new_beams
     # return most likely prediction
     x2, _ = sorted(beams, key=lambda x: x[1])[-1]
@@ -124,12 +124,17 @@ callbacks.append(LearningRateScheduler(lr_schedule))
 callbacks.append(TerminateOnNaN())
 callbacks.append(ModelCheckpoint(filepath='lyrics_model.h5', period=1, save_weights_only=True))
 
+
+
 # for debugging. e.g. if loss turns to NaN, batches[0] will contain batch
 # that caused the NaN
 batches = deque(maxlen=2)
 gen = (i for i in batch_generator)
 gen_test = (i for i in batch_generator_test)
 
+#from keras import backend as K
+#def loss(y_true, y_pred):
+#    return K.categorical_crossentropy(y_true[:,-8:,:], y_pred[:,-8:,:])
 
 if __name__ == '__main__':
     if os.path.exists(logfile):
