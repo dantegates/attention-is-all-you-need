@@ -8,11 +8,10 @@ from data import BEATLES, CNN, SONGNAMES_TRAIN, SONGNAMES_TEST
 from keras.callbacks import (LambdaCallback, LearningRateScheduler,
                              ModelCheckpoint, TerminateOnNaN)
 from model import Transformer
-loss = 'categorical_crossentropy'
 
 loss = 'categorical_crossentropy'
 
-# model params
+    # model params
 n_heads = 8
 encoder_layers = decoder_layers = 6
 d_model = 64 * n_heads
