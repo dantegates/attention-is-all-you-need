@@ -69,7 +69,6 @@ class BatchGenerator:
     def fetch_file_content(self):
         for file in self.files:
             with open(file) as f:
-                # print(file)
                 content = f.read() + self.END
                 if len(content) < self.batch_size:
                     if not file in self.skipped:
@@ -97,13 +96,12 @@ class BatchGenerator:
             # example determined by p
             p = 0 if idx_bucket == 0 else self.example_map[idx_bucket - 1]
             idx_target_token = example_position - p
-            x2_start = idx_target_token - self.sequence_len
+            x2_start = max(0, idx_target_token - self.sequence_len)
             x2_stop = idx_target_token
             if encoder_tokens == decoder_tokens:
                 x1_start, x1_stop = x2_start, x2_stop
             else:
                 x1_start, x1_stop = 0, self.sequence_len
-
             x1 = encoder_tokens[x1_start:x1_stop]
             x2 = decoder_tokens[x2_start:x2_stop]
             y = decoder_tokens[x2_start+1:x2_stop+1]
