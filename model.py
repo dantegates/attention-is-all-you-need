@@ -270,7 +270,8 @@ class Attention(Layer):
         if masking:
             logger.debug('masking')
             weights = self.mask(weights)
-        return K.batch_dot(weights, k_v)
+        x = K.batch_dot(weights, k_v)
+        return self.activation(x)
 
     def mask(self, x):
         shape = K.int_shape(x)
