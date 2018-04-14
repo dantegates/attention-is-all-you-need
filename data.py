@@ -23,3 +23,9 @@ class BaseBatchGenerator:
 
     def process_item(self, item):
         raise NotImplementedError
+
+    def batches_per_epoch(self, items, batch_size):
+        epoch = self.generate_epoch(items, batch_size)
+        for i, batch in enumerate(epoch, start=1):
+            pass
+        return i
