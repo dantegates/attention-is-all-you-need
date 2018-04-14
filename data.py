@@ -1,3 +1,5 @@
+import random
+
 class BaseBatchGenerator:
     def generate_forever(self, items, batch_size):
         item = items[:]  # copy so we can shuffle in place
