@@ -10,7 +10,7 @@ class BaseBatchGenerator:
     def generate_epoch(self, items, batch_size):
         steps = []
         for item in items:
-            training_examples = self.process_item(item)
+            training_examples = self.generate_examples(item)
             steps.extend(training_examples)
             n_batches = len(steps) // batch_size
             n_steps = n_batches * batch_size
@@ -21,7 +21,7 @@ class BaseBatchGenerator:
     def generate_batches(self, steps, batch_size, n_batches):
         raise NotImplementedError
 
-    def process_item(self, item):
+    def generate_examples(self, item):
         raise NotImplementedError
 
     def batches_per_epoch(self, items, batch_size):
