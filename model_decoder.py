@@ -32,17 +32,14 @@ logger = logging.getLogger(__name__)
 class TransformerDecoder(Model):
     def __init__(self, n_heads=None, sequence_len=None,
                  decoder_layers=None, d_model=None, vocab_size=None,
-                 layer_normalization=True, dropout=0.1,
-                 residual_connections=True):
+                 dropout=0.1):
         # define attributes
         self.n_heads = n_heads
         self.sequence_len = sequence_len
         self.decoder_layers = decoder_layers
         self.d_model = d_model
         self.vocab_size = vocab_size
-        self.layer_normalization = layer_normalization
         self.dropout = dropout
-        self.residual_connections = residual_connections
 
         self.decoder_input = self.init_input()
         self.decoder_embedding, self.embedding_weights = self.init_embeddings()
@@ -89,35 +86,28 @@ class TransformerDecoder(Model):
             decoder_sublayer1 = decoder_sublayer1(decoder_layer_input)
             if self.dropout:
                 decoder_sublayer1 = Dropout(self.dropout)(decoder_sublayer1)
-            if self.residual_connections:
-                decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
-            if self.layer_normalization:
-                decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
+            decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
+            decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
 
             # Sublayer 2
             decoder_sublayer2 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, name=next(names))
             decoder_sublayer2 = decoder_sublayer2(decoder_sublayer1)
             if self.dropout:
                 decoder_sublayer2 = Dropout(self.dropout)(decoder_sublayer2)
-            if self.residual_connections:
-                decoder_sublayer2 = Add(name=next(names))([decoder_sublayer1, decoder_sublayer2])
-            if self.layer_normalization:
-                decoder_sublayer2 = LayerNormalization(name=next(names))(decoder_sublayer2)
+            decoder_sublayer2 = Add(name=next(names))([decoder_sublayer1, decoder_sublayer2])
+            decoder_sublayer2 = LayerNormalization(name=next(names))(decoder_sublayer2)
 
             # Sublayer 3
             decoder_sublayer3 = Dense(self.d_model, activation='relu', name=next(names))(decoder_sublayer2)
             decoder_sublayer3 = Dense(self.d_model, name=next(names))(decoder_sublayer3)
             if self.dropout:
                 decoder_sublayer3 = Dropout(self.dropout)(decoder_sublayer3)
-            if self.residual_connections:
-                decoder_sublayer3 = Add(name=next(names))([decoder_sublayer2, decoder_sublayer3])
-            if self.layer_normalization:
-                decoder_sublayer3 = LayerNormalization(name=next(names))(decoder_sublayer3)
+            decoder_sublayer3 = Add(name=next(names))([decoder_sublayer2, decoder_sublayer3])
+            decoder_sublayer3 = LayerNormalization(name=next(names))(decoder_sublayer3)
             # output of layer becomes input of next layer
             decoder_layer_input = decoder_sublayer3
         # finally stack a linear transformation with softmax activation
-        # to get next token probabilities
-
+        # to get token probabilities
         final_output = SharedWeights(K.transpose(self.embedding_weights), activation='softmax')
         decoder = final_output(decoder_sublayer3)
         return decoder
@@ -147,11 +137,7 @@ class MultiHeadAttention(Layer):
         super().__init__(**kwargs)
 
     def build(self, input_shape):
-        if isinstance(input_shape, list):
-            assert len(set(input_shape)) == 1, 'k, q, and v must be of same shape'
-            shape = input_shape[0]
-        else:
-            shape = input_shape
+        shape = input_shape
         logger.debug('building MultiAttention')
         self.W_o = self.add_weight(name='W_o', 
                                    shape=(self.n_heads*self.d_v, self.d_model),
@@ -161,9 +147,6 @@ class MultiHeadAttention(Layer):
                       for _ in range(self.n_heads)]
         super().build(input_shape)
     
-    # this signature is a hack to work with keras layers call only adding
-    # a single position tensor to the graph (causes problems in encoder-decoder
-    # attention)
     def call(self, inputs):
         concat = K.concatenate([head(inputs, masking=self.masking) for head in self.heads])
         logger.debug('concat shape: %s', K.int_shape(concat))
@@ -217,20 +200,18 @@ class Attention(Layer):
         super().build(input_shape)
 
     def call(self, inputs, masking=False):
-        try:
-            q, k, v = inputs
-        except TypeError:
-            q = k = v = inputs
+        q = k = v = inputs
         q_p = K.dot(q, self.W_q)
         k_p = K.dot(k, self.W_k)
-        k_v = K.dot(v, self.W_v)
+        v_p = K.dot(v, self.W_v)
         k_t = K.permute_dimensions(K.transpose(k_p), (2, 0, 1))
-        weights = K.batch_dot(q_p, k_t) / K.variable(self.scalar)
+        attention_weights = K.batch_dot(q_p, k_t) / K.variable(self.scalar)
         if masking:
             logger.debug('masking')
-            weights = self.mask(weights)
-        x = K.batch_dot(weights, k_v)
-        return self.activation(x)
+            attention_weights = self.mask(attention_weights)
+        x = self.activation(attention_weights)
+        return K.batch_dot(x, v_p)
+        
 
     def mask(self, x):
         shape = K.int_shape(x)
