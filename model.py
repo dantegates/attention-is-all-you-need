@@ -33,7 +33,7 @@ class Transformer(Model):
     def __init__(self, n_heads=None, sequence_len=None, encoder_layers=None,
                  decoder_layers=None, d_model=None, vocab_size=None,
                  layer_normalization=True, dropout=0.1, residual_connections=True,
-                 sparse=False):
+                 output_activation='softmax'):
         # define attributes
         self.n_heads = n_heads
         self.sequence_len = sequence_len
@@ -44,7 +44,7 @@ class Transformer(Model):
         self.layer_normalization = layer_normalization
         self.dropout = dropout
         self.residual_connections = residual_connections
-        self.sparse = sparse
+        self.output_activation = output_activation
 
         self.encoder_input, self.decoder_input = self.init_input()
         self.encoder_embedding, self.decoder_embedding, self.embedding_weights = self.init_embeddings()
@@ -159,12 +159,7 @@ class Transformer(Model):
             decoder_layer_input = decoder_sublayer3
         # finally stack a linear transformation with softmax activation
         # to get token probabilities
-        #
-        # linear activation is a hack while keras sparse_categorical_crossentropy does not
-        # seem to work.
-        # see: https://github.com/tensorflow/tensorflow/issues/17150
-        final_activation = 'linear' if self.sparse else 'softmax'
-        final_output = SharedWeights(K.transpose(self.embedding_weights), activation=final_activation)
+        final_output = SharedWeights(K.transpose(self.embedding_weights), activation=self.output_activation)
         decoder = final_output(decoder_sublayer3)
         return decoder
 
