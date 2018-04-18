@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 class Transformer(Model):
     def __init__(self, n_heads=None, sequence_len=None,
                  encoder_layers=None, decoder_layers=None, d_model=None, vocab_size=None,
-                 layer_normalization=True, dropout=True, residual_connections=True):
+                 layer_normalization=True, dropout=0.1, residual_connections=True):
         # define attributes
         self.n_heads = n_heads
         self.sequence_len = sequence_len
@@ -73,7 +73,7 @@ class Transformer(Model):
         decoder_embedding = positional_encoding(decoder_embedding)
         decoder_embedding = embedding_scalar(decoder_embedding)
         if self.dropout:
-            decoder_embedding = Dropout(0.1)(decoder_embedding)
+            decoder_embedding = Dropout(self.dropout)(decoder_embedding)
 
         return encoder_embedding, decoder_embedding, embedding.embeddings
 
@@ -94,7 +94,7 @@ class Transformer(Model):
             encoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, name=next(names))
             encoder_sublayer1 = encoder_sublayer1(encoder_layer_input)
             if self.dropout:
-                encoder_sublayer1 = Dropout(0.1)(encoder_sublayer1)
+                encoder_sublayer1 = Dropout(self.dropout)(encoder_sublayer1)
             if self.residual_connections:
                 encoder_sublayer1 = Add(name=next(names))([encoder_layer_input, encoder_sublayer1])
             if self.layer_normalization:
@@ -102,7 +102,7 @@ class Transformer(Model):
             encoder_sublayer2 = Dense(self.d_model, activation='relu', name=next(names))(encoder_sublayer1)
             encoder_sublayer2 = Dense(self.d_model, name=next(names))(encoder_sublayer2)
             if self.dropout:
-                encoder_sublayer2 = Dropout(0.1)(encoder_sublayer2)
+                encoder_sublayer2 = Dropout(self.dropout)(encoder_sublayer2)
             if self.residual_connections:
                 encoder_sublayer2 = Add(name=next(names))([encoder_sublayer1, encoder_sublayer2])
             if self.layer_normalization:
@@ -132,7 +132,7 @@ class Transformer(Model):
                                                    masking=True, name=next(names))
             decoder_sublayer1 = decoder_sublayer1(decoder_layer_input)
             if self.dropout:
-                decoder_sublayer1 = Dropout(0.1)(decoder_sublayer1)
+                decoder_sublayer1 = Dropout(self.dropout)(decoder_sublayer1)
             if self.residual_connections:
                 decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
             if self.layer_normalization:
@@ -140,7 +140,7 @@ class Transformer(Model):
             decoder_sublayer2 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, name=next(names))
             decoder_sublayer2 = decoder_sublayer2([decoder_sublayer1, self.encoder, self.encoder])
             if self.dropout:
-                decoder_sublayer2 = Dropout(0.1)(decoder_sublayer2)
+                decoder_sublayer2 = Dropout(self.dropout)(decoder_sublayer2)
             if self.residual_connections:
                 decoder_sublayer2 = Add(name=next(names))([decoder_sublayer1, decoder_sublayer2])
             if self.layer_normalization:
@@ -148,7 +148,7 @@ class Transformer(Model):
             decoder_sublayer3 = Dense(self.d_model, activation='relu', name=next(names))(decoder_sublayer2)
             decoder_sublayer3 = Dense(self.d_model, name=next(names))(decoder_sublayer3)
             if self.dropout:
-                decoder_sublayer3 = Dropout(0.1)(decoder_sublayer3)
+                decoder_sublayer3 = Dropout(self.dropout)(decoder_sublayer3)
             if self.residual_connections:
                 decoder_sublayer3 = Add(name=next(names))([decoder_sublayer2, decoder_sublayer3])
             if self.layer_normalization:
