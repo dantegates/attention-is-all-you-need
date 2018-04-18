@@ -264,14 +264,14 @@ class Attention(Layer):
             q = k = v = inputs
         q_p = K.dot(q, self.W_q)
         k_p = K.dot(k, self.W_k)
-        k_v = K.dot(v, self.W_v)
+        v_p = K.dot(v, self.W_v)
         k_t = K.permute_dimensions(K.transpose(k_p), (2, 0, 1))
-        weights = K.batch_dot(q_p, k_t) / K.variable(self.scalar)
+        attention_weights = K.batch_dot(q_p, k_t) / K.variable(self.scalar)
         if masking:
             logger.debug('masking')
-            weights = self.mask(weights)
-        x = K.batch_dot(weights, k_v)
-        return self.activation(x)
+            attention_weights = self.mask(attention_weights)
+        x = self.activation(attention_weights)
+        return K.batch_dot(x, v_p)
 
     def mask(self, x):
         shape = K.int_shape(x)
