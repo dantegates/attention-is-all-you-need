@@ -1,7 +1,12 @@
 """
-Implementation of Transformer model, as described here
+Modified version of Transformer model, including only the decoder
+as described here
 
-    https://arxiv.org/pdf/1706.03762.pdf
+    https://arxiv.org/pdf/1801.10198.pdf
+    
+TODO: Both T-ED and T-D should be available from the same class in
+    model.py. Keeping them separate for now though while still
+    experimenting with code.
 """
 
 from __future__ import absolute_import, division, print_function
