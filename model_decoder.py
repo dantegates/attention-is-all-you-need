@@ -217,7 +217,6 @@ class AttentionHead(Layer):
             attention_weights = self.mask(attention_weights)
         x = self.activation(attention_weights)
         return K.batch_dot(x, v_p)
-        
 
     def mask(self, x):
         shape = K.int_shape(x)
