@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 class TransformerDecoder(Model):
     def __init__(self, n_heads=None, sequence_len=None,
                  decoder_layers=None, d_model=None, vocab_size=None,
-                 dropout=0.1):
+                 dropout=0.1, sparse=False):
         # define attributes
         self.n_heads = n_heads
         self.sequence_len = sequence_len
@@ -40,6 +40,7 @@ class TransformerDecoder(Model):
         self.d_model = d_model
         self.vocab_size = vocab_size
         self.dropout = dropout
+        self.sparse = sparse
 
         self.decoder_input = self.init_input()
         self.decoder_embedding, self.embedding_weights = self.init_embeddings()
@@ -108,7 +109,12 @@ class TransformerDecoder(Model):
             decoder_layer_input = decoder_sublayer3
         # finally stack a linear transformation with softmax activation
         # to get token probabilities
-        final_output = SharedWeights(K.transpose(self.embedding_weights), activation='softmax')
+        #
+        # linear activation is a hack while keras sparse_categorical_crossentropy does not
+        # seem to work.
+        # see: https://github.com/tensorflow/tensorflow/issues/17150
+        final_activation = 'linear' if self.sparse else 'softmax'
+        final_output = SharedWeights(K.transpose(self.embedding_weights), activation=final_activation)
         decoder = final_output(decoder_sublayer3)
         return decoder
 
@@ -143,7 +149,7 @@ class MultiHeadAttention(Layer):
                                    shape=(self.n_heads*self.d_v, self.d_model),
                                    initializer='uniform',
                                    trainable=True)
-        self.heads = [Attention(d_model=self.d_model, d_k=self.d_k, d_v=self.d_v, activation='softmax')
+        self.heads = [AttentionHead(d_model=self.d_model, d_k=self.d_k, d_v=self.d_v, activation='softmax')
                       for _ in range(self.n_heads)]
         super().build(input_shape)
     
@@ -168,7 +174,7 @@ class MultiHeadAttention(Layer):
         return config
 
 
-class Attention(Layer):
+class AttentionHead(Layer):
     def __init__(self, d_model, d_k, d_v, activation, **kwargs):
         logger.debug('init Attention') 
         self.d_model = d_model
@@ -282,62 +288,6 @@ class Scalar(Layer):
         config = super().get_config()
         config['value'] = self.value
         return config
-
-
-class FFN(Layer):
-    def __init__(self, units, activation, **kwargs):
-        self.units = units
-        self._activation = activation
-        self.activation = activations.get(activation)
-        self.bias_regularizer = None
-        self.bias_constraint = None
-        super().__init__(**kwargs)
-
-    def build(self, input_shape):
-        input_dim = input_shape[-1]
-
-        self.kernel1 = self.add_weight(shape=(input_dim, self.units),
-                                       initializer='glorot_uniform',
-                                       name='kernel1',
-                                       regularizer=None,
-                                       constraint=None,
-                                       trainable=True)
-        self.bias1 = self.add_weight(shape=(self.units,),
-                                     initializer='zeros',
-                                     name='bias1',
-                                     regularizer=self.bias_regularizer,
-                                     constraint=self.bias_constraint,
-                                     trainable=True)
-        self.kernel2 = self.add_weight(shape=(input_dim, self.units),
-                                       initializer='glorot_uniform',
-                                       name='kernel2',
-                                       regularizer=None,
-                                       constraint=None,
-                                       trainable=True)
-        self.bias2 = self.add_weight(shape=(self.units,),
-                                     initializer='zeros',
-                                     name='bias2',
-                                     regularizer=self.bias_regularizer,
-                                     constraint=self.bias_constraint,
-                                     trainable=True)
-        self.input_spec = InputSpec(min_ndim=2, axes={-1: input_dim})
-        super().build(input_shape)
-
-    def call(self, x):
-        output = self.activation(K.bias_add(K.dot(x, self.kernel1), self.bias1))
-        return K.bias_add(K.dot(output, self.kernel2), self.bias2)
-
-    def compute_output_shape(self, input_shape):
-        assert input_shape and len(input_shape) >= 2
-        assert input_shape[-1]
-        output_shape = list(input_shape)
-        output_shape[-1] = self.units
-        return tuple(output_shape)
-
-    def get_config(self):
-        config = super().get_config()
-        config['units'] = self.units
-        config['activation'] = self._activation
 
 
 class LayerNormalization(Layer):
