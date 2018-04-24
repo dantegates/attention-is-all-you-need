@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 class Transformer(Model):
     def __init__(self, n_heads=None, sequence_len=None, encoder_layers=None,
-                 decoder_layers=None, d_model=None, vocab_size=None,
+                 decoder_layers=None, d_model=None, d_k=None, d_v=None, vocab_size=None,
                  layer_normalization=True, dropout=0.1, residual_connections=True,
                  output_activation='softmax'):
         # define attributes
@@ -40,6 +40,8 @@ class Transformer(Model):
         self.encoder_layers = encoder_layers
         self.decoder_layers = decoder_layers
         self.d_model = d_model
+        self.d_k = d_k
+        self.d_v = d_v
         self.vocab_size = vocab_size
         self.layer_normalization = layer_normalization
         self.dropout = dropout
@@ -93,7 +95,8 @@ class Transformer(Model):
                 'encoder_layer%s_residual2' % i,
                 'encoder_layer%s_layernorm2' % i,
             ])
-            encoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, name=next(names))
+            encoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model,
+                                                   d_k=self.d_k, d_v=self.d_v, name=next(names))
             encoder_sublayer1 = encoder_sublayer1(encoder_layer_input)
             if self.dropout:
                 encoder_sublayer1 = Dropout(self.dropout)(encoder_sublayer1)
@@ -131,6 +134,7 @@ class Transformer(Model):
                 'decoder_layer%s_layernorm3' % i,
             ])
             decoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model,
+                                                   d_k=self.d_k, d_v=self.d_v,
                                                    masking=True, name=next(names))
             decoder_sublayer1 = decoder_sublayer1(decoder_layer_input)
             if self.dropout:
@@ -139,7 +143,8 @@ class Transformer(Model):
                 decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
             if self.layer_normalization:
                 decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
-            decoder_sublayer2 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model, name=next(names))
+            decoder_sublayer2 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model,
+                                                   d_k=self.d_k, d_v=self.d_v, name=next(names))
             decoder_sublayer2 = decoder_sublayer2([decoder_sublayer1, self.encoder, self.encoder])
             if self.dropout:
                 decoder_sublayer2 = Dropout(self.dropout)(decoder_sublayer2)
@@ -170,6 +175,8 @@ class Transformer(Model):
         config['encoder_layers'] = self.encoder_layers
         config['decoder_layers'] = self.decoder_layers
         config['d_model'] = self.d_model
+        config['d_k'] = self.d_k
+        config['d_v'] = self.d_v
         config['vocab_size'] = self.vocab_size
         config['layer_normalization'] = self.layer_normalization
         config['dropout'] = self.dropout
@@ -178,13 +185,14 @@ class Transformer(Model):
 
 
 class MultiHeadAttention(Layer):
-    def __init__(self, n_heads, d_model, masking=False, **kwargs):
+    def __init__(self, n_heads, d_model, d_k, d_v, masking=False, **kwargs):
         # activation = comparison
         logger.debug('init MultiHeadAttention')
+        assert d_model % n_heads == 0, 'h must divide d_model evenly'
         self.n_heads = n_heads
         self.d_model = d_model
-        assert self.d_model % n_heads == 0, 'h must divide d_model evenly'
-        self.d_k = self.d_v = self.d_model // n_heads
+        self.d_k = self.d_model // n_heads if d_k is None else d_k
+        self.d_v = self.d_model // n_heads if d_v is None else d_v
         self.masking = masking
         super().__init__(**kwargs)
         
