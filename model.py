@@ -33,7 +33,7 @@ class Transformer(Model):
     def __init__(self, n_heads=None, sequence_len=None, encoder_layers=None,
                  decoder_layers=None, d_model=None, d_k=None, d_v=None, vocab_size=None,
                  layer_normalization=True, dropout=0.1, residual_connections=True,
-                 output_activation='softmax'):
+                 share_embedding_weights=True, output_activation='softmax'):
         # define attributes
         self.n_heads = n_heads
         self.sequence_len = sequence_len
@@ -46,6 +46,7 @@ class Transformer(Model):
         self.layer_normalization = layer_normalization
         self.dropout = dropout
         self.residual_connections = residual_connections
+        self.share_embedding_weights = share_embedding_weights
         self.output_activation = output_activation
 
         self.encoder_input, self.decoder_input = self.init_input()
@@ -79,7 +80,9 @@ class Transformer(Model):
         if self.dropout:
             decoder_embedding = Dropout(self.dropout)(decoder_embedding)
 
-        return encoder_embedding, decoder_embedding, embedding.embeddings
+        embedding_weights = embedding.embeddings if self.share_embedding_weights else None
+
+        return encoder_embedding, decoder_embedding, embedding_weights
 
     def init_encoder(self):
         # make encoder
@@ -164,7 +167,10 @@ class Transformer(Model):
             decoder_layer_input = decoder_sublayer3
         # finally stack a linear transformation with softmax activation
         # to get token probabilities
-        final_output = SharedWeights(K.transpose(self.embedding_weights), activation=self.output_activation)
+        if self.share_embedding_weights:
+            final_output = SharedWeights(K.transpose(self.embedding_weights), activation=self.output_activation)
+        else:
+            final_output = Dense(self.vocab_size, activation=self.output_activation)
         decoder = final_output(decoder_sublayer3)
         return decoder
 
@@ -467,33 +473,34 @@ def init_cli():
 if __name__ == '__main__':
     import sys
 
-    n_heads = 8
-    encoder_layers = decoder_layers = 2
-    d_model = 64 * n_heads
-    vocab_size = 32
-    sequence_len = 30
-    test_sequence_len = 100
-    cli = init_cli()
-    _ = logging.basicConfig(level='DEBUG') if cli.debug  else None
+    N_HEADS = 8
+    ENCODER_LAYERS = DECODER_LAYERS = 2
+    D_MODEL = 64 * N_HEADS
+    VOCAB_SIZE = 32
+    SEQUENCE_LEN = 30
+    SHARE_EMBEDDING_WEIGHTS = False
+    CLI = init_cli()
+    _ = logging.basicConfig(level='DEBUG') if CLI.debug  else None
 
     model = Transformer(
-        n_heads=n_heads, encoder_layers=encoder_layers, decoder_layers=decoder_layers,
-        d_model=d_model, vocab_size=vocab_size, sequence_len=sequence_len)
+        n_heads=N_HEADS, encoder_layers=ENCODER_LAYERS, decoder_layers=DECODER_LAYERS,
+        d_model=D_MODEL, vocab_size=VOCAB_SIZE, sequence_len=SEQUENCE_LEN,
+        share_embedding_weights=SHARE_EMBEDDING_WEIGHTS)
 
-    if cli.summarize_encoder:
+    if CLI.summarize_encoder:
         print('ENCODER SUMMARY')
         model.encoder_model.summary(line_length=100)
-    if cli.summarize_model:
+    if CLI.summarize_model:
         print('MODEL SUMMARY')
         model.summary(line_length=100)
-    if cli.plot_encoder:
+    if CLI.plot_encoder:
         keras.utils.plot_model(model.encoder_model, 'encoder.png', show_shapes=True)
         sp.call(['open', 'encoder.png'])
-    if cli.plot_model:
+    if CLI.plot_model:
         keras.utils.plot_model(model, 'model.png', show_shapes=True)
         sp.call(['open', 'model.png'])
-    if cli.save_model:
-        X = np.random.randint(0, vocab_size, size=sequence_len)
+    if CLI.save_model:
+        X = np.random.randint(0, VOCAB_SIZE, size=SEQUENCE_LEN)
         X = [X, X]
         p1 = model.predict(X)
         model.save('test_model_save.h5')
