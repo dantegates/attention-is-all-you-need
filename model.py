@@ -487,12 +487,10 @@ if __name__ == '__main__':
         print('MODEL SUMMARY')
         model.summary(line_length=100)
     if cli.plot_encoder:
-        keras.utils.plot_model(model.encoder_model, 'encoder.dot', show_shapes=True)
-        sp.call(['dot', '-Tpng', 'encoder.dot', '-o', 'encoder.png'])
+        keras.utils.plot_model(model.encoder_model, 'encoder.png', show_shapes=True)
         sp.call(['open', 'encoder.png'])
     if cli.plot_model:
-        keras.utils.plot_model(model, 'model.dot', show_shapes=True)
-        sp.call(['dot', '-Tpng', 'model.dot', '-o', 'model.png'])
+        keras.utils.plot_model(model, 'model.png', show_shapes=True)
         sp.call(['open', 'model.png'])
     if cli.save_model:
         X = np.random.randint(0, vocab_size, size=sequence_len)
