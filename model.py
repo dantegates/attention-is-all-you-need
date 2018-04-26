@@ -72,7 +72,7 @@ class Transformer(Model):
         encoder_embedding = positional_encoding(encoder_embedding)
         encoder_embedding = embedding_scalar(encoder_embedding)
         if self.dropout:
-            encoder_embedding = Dropout(0.1)(encoder_embedding)
+            encoder_embedding = Dropout(self.dropout)(encoder_embedding)
 
         decoder_embedding = embedding(self.decoder_input)
         decoder_embedding = positional_encoding(decoder_embedding)
