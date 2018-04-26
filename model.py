@@ -30,13 +30,16 @@ logger = logging.getLogger(__name__)
 
 
 class Transformer(Model):
-    def __init__(self, n_heads=None, sequence_len=None, encoder_layers=None,
+    def __init__(self, n_heads=None, sequence_len=None, max_sequence_len=None, encoder_layers=None,
                  decoder_layers=None, d_model=None, d_k=None, d_v=None, vocab_size=None,
                  layer_normalization=True, dropout=0.1, residual_connections=True,
                  share_embedding_weights=True, output_activation='softmax'):
         # define attributes
         self.n_heads = n_heads
         self.sequence_len = sequence_len
+        if sequence_len is None and max_sequence_len is None:
+            raise ValueError('must specify max_sequence_len when sequence_len is None')
+        self.max_sequence_len = max_sequence_len
         self.encoder_layers = encoder_layers
         self.decoder_layers = decoder_layers
         self.d_model = d_model
@@ -66,7 +69,7 @@ class Transformer(Model):
         embedding = Embedding(input_dim=self.vocab_size, output_dim=self.d_model,
                               input_length=self.sequence_len, name='embedding')
         embedding_scalar = Scalar(np.sqrt(self.d_model), name='embedding_scalar')
-        positional_encoding = PositionalEncoding(self.d_model, self.sequence_len)        
+        positional_encoding = PositionalEncoding(self.d_model, self.max_sequence_len)        
 
         encoder_embedding = embedding(self.encoder_input)
         encoder_embedding = positional_encoding(encoder_embedding)
@@ -315,22 +318,23 @@ class Attention(Layer):
 
 
 class PositionalEncoding(Layer):
-    def __init__(self, d_model, sequence_len, **kwargs):
+    def __init__(self, d_model, max_sequence_len, **kwargs):
         super().__init__(**kwargs)
         self.d_model = d_model
-        self.sequence_len = sequence_len
-        self.encoding = self.make_encoding(d_model, sequence_len)
+        self.max_sequence_len = max_sequence_len
+        self.encoding = self.make_encoding(d_model, max_sequence_len)
 
     def call(self, inputs):
-        return self.encoding + inputs
+        return inputs + self.encoding[K.shape(inputs)[1]:,:]
 
-    def make_encoding(self, d_model, sequence_len):
-        def gen():
-            for i in range(d_model):
-                f = np.sin if i % 2 == 0 else np.cos
-                yield f(np.arange(sequence_len) / ((10000**(2*i/d_model))))
-        arr = np.array(list(gen())).transpose()
-        return K.variable(arr)
+    @staticmethod
+    def make_encoding(d_model, sequence_len):
+        def f(i):
+            arr = np.arange(sequence_len) / (10000**((2*i)/d_model))
+            return np.cos(arr) if i % 2 else np.sin(arr)
+        weights = [f(i) for i in range(d_model)]
+        X = np.array(weights).transpose()
+        return K.variable(X)
 
     def compute_output_shape(self, input_shape):
         return input_shape
@@ -338,7 +342,7 @@ class PositionalEncoding(Layer):
     def get_config(self):
         config = super().get_config()
         config['d_model'] = self.d_model
-        config['sequence_len'] = self.sequence_len
+        config['max_sequence_len'] = self.max_sequence_len
         return config
 
 
@@ -477,14 +481,15 @@ if __name__ == '__main__':
     ENCODER_LAYERS = DECODER_LAYERS = 2
     D_MODEL = 64 * N_HEADS
     VOCAB_SIZE = 32
-    SEQUENCE_LEN = 30
+    SEQUENCE_LEN = None
+    MAX_SEQUENCE_LEN = 30
     SHARE_EMBEDDING_WEIGHTS = False
     CLI = init_cli()
     _ = logging.basicConfig(level='DEBUG') if CLI.debug  else None
 
     model = Transformer(
         n_heads=N_HEADS, encoder_layers=ENCODER_LAYERS, decoder_layers=DECODER_LAYERS,
-        d_model=D_MODEL, vocab_size=VOCAB_SIZE, sequence_len=SEQUENCE_LEN,
+        d_model=D_MODEL, vocab_size=VOCAB_SIZE, sequence_len=SEQUENCE_LEN, max_sequence_len=MAX_SEQUENCE_LEN,
         share_embedding_weights=SHARE_EMBEDDING_WEIGHTS)
 
     if CLI.summarize_encoder:
