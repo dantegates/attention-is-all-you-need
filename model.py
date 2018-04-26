@@ -24,21 +24,20 @@ from keras.models import Model, load_model
 # - keyword only arguments
 # - visualize attention
 # - load method
+# - double check masking
+# - double check positional encoding
 
 
 logger = logging.getLogger(__name__)
 
 
 class Transformer(Model):
-    def __init__(self, n_heads=None, sequence_len=None, max_sequence_len=None, encoder_layers=None,
+    def __init__(self, n_heads=None, max_sequence_len=None, encoder_layers=None,
                  decoder_layers=None, d_model=None, d_k=None, d_v=None, vocab_size=None,
                  layer_normalization=True, dropout=0.1, residual_connections=True,
                  share_embedding_weights=True, output_activation='softmax'):
         # define attributes
         self.n_heads = n_heads
-        self.sequence_len = sequence_len
-        if sequence_len is None and max_sequence_len is None:
-            raise ValueError('must specify max_sequence_len when sequence_len is None')
         self.max_sequence_len = max_sequence_len
         self.encoder_layers = encoder_layers
         self.decoder_layers = decoder_layers
@@ -67,7 +66,7 @@ class Transformer(Model):
 
     def init_embeddings(self):
         embedding = Embedding(input_dim=self.vocab_size, output_dim=self.d_model,
-                              input_length=self.sequence_len, name='embedding')
+                              input_length=None, name='embedding')
         embedding_scalar = Scalar(np.sqrt(self.d_model), name='embedding_scalar')
         positional_encoding = PositionalEncoding(self.d_model, self.max_sequence_len)        
 
@@ -424,7 +423,6 @@ if __name__ == '__main__':
     ENCODER_LAYERS = DECODER_LAYERS = 2
     D_MODEL = 64 * N_HEADS
     VOCAB_SIZE = 32
-    SEQUENCE_LEN = None
     MAX_SEQUENCE_LEN = 30
     SHARE_EMBEDDING_WEIGHTS = False
     BATCH_SIZE = 32
@@ -433,7 +431,7 @@ if __name__ == '__main__':
 
     model = Transformer(
         n_heads=N_HEADS, encoder_layers=ENCODER_LAYERS, decoder_layers=DECODER_LAYERS,
-        d_model=D_MODEL, vocab_size=VOCAB_SIZE, sequence_len=SEQUENCE_LEN, max_sequence_len=MAX_SEQUENCE_LEN,
+        d_model=D_MODEL, vocab_size=VOCAB_SIZE, max_sequence_len=MAX_SEQUENCE_LEN,
         share_embedding_weights=SHARE_EMBEDDING_WEIGHTS)
     model.compile(loss='categorical_crossentropy', optimizer='adam')
 
@@ -450,8 +448,18 @@ if __name__ == '__main__':
         keras.utils.plot_model(model, 'model.png', show_shapes=True)
         sp.call(['open', 'model.png'])
     if CLI.test_train:
+        def random_target(batch_size, sequence_len, vocab_size):
+            sequence_idx = np.arange(sequence_len)
+            vocab_idx = np.random.randint(0, vocab_size, size=sequence_len)
+            x = np.zeros((batch_size, sequence_len, vocab_size))
+            x[:,sequence_idx,vocab_idx] = 1
+            return x
         X1 = np.random.randint(0, VOCAB_SIZE, size=(BATCH_SIZE, 20))
+        y1 = random_target(BATCH_SIZE, 20, VOCAB_SIZE)
         X2 = np.random.randint(0, VOCAB_SIZE, size=(BATCH_SIZE, 15))
+        y2 = random_target(BATCH_SIZE, 15, VOCAB_SIZE)
+        model.train_on_batch([X1, X1], y1)
+        model.train_on_batch([X2, X2], y2)
         model.predict([X1, X1])
         model.predict([X2, X2])
     if CLI.save_model:
