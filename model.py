@@ -294,6 +294,8 @@ class AttentionHead(Layer):
     def mask(inputs):
         mask = K.zeros_like(inputs)
         mask -= 1e15
+        # upper triangular, see
+        # https://www.tensorflow.org/api_docs/python/tf/matrix_band_part
         mask = tf.matrix_band_part(inputs, 1, -1)
         return inputs + mask
 
