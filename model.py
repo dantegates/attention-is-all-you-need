@@ -75,7 +75,7 @@ class Transformer(Model):
         encoder_embedding = positional_encoding(encoder_embedding)
         encoder_embedding = embedding_scalar(encoder_embedding)
         if self.dropout:
-            encoder_embedding = Dropout(0.1)(encoder_embedding)
+            encoder_embedding = Dropout(self.dropout)(encoder_embedding)
 
         decoder_embedding = embedding(self.decoder_input)
         decoder_embedding = positional_encoding(decoder_embedding)
@@ -216,7 +216,7 @@ class MultiHeadAttention(Layer):
                                    shape=(self.n_heads*self.d_v, self.d_model),
                                    initializer='uniform',
                                    trainable=True)
-        self.heads = [Attention(d_model=self.d_model, d_k=self.d_k, d_v=self.d_v, activation='softmax')
+        self.heads = [AttentionHead(d_model=self.d_model, d_k=self.d_k, d_v=self.d_v, activation='softmax')
                       for _ in range(self.n_heads)]
         super().build(input_shape)
     
@@ -244,9 +244,9 @@ class MultiHeadAttention(Layer):
         return config
 
 
-class Attention(Layer):
+class AttentionHead(Layer):
     def __init__(self, d_model, d_k, d_v, activation, **kwargs):
-        logger.debug('init Attention') 
+        logger.debug('init AttentionHead') 
         self.d_model = d_model
         self.d_k = d_k
         self.d_v = d_v
