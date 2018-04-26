@@ -366,19 +366,19 @@ class LayerNormalization(Layer):
 
     def build(self, input_shape):
         self.gain = self.add_weight(name='gain',
-                                    shape=input_shape[1:],
+                                    shape=(input_shape[-1],),
                                     initializer='glorot_uniform',
                                     trainable=True)
         self.bias = self.add_weight(name='bias',
-                                    shape=input_shape[1:],
+                                    shape=(input_shape[-1],),
                                     initializer='glorot_uniform',
                                     trainable=True)
         super().build(input_shape)
 
-    def call(self, x):
-        mean = K.mean(x, axis=-1, keepdims=True)
-        std = K.std(x, axis=-1, keepdims=True)
-        return (self.gain / (std + self.epsilon)) * (x - mean) + self.bias
+    def call(self, inputs):
+        mean = K.mean(inputs, axis=-1, keepdims=True)
+        std = K.std(inputs, axis=-1, keepdims=True)
+        return (self.gain / (std + self.epsilon)) * (inputs - mean) + self.bias
 
     def compute_output_shape(self, input_shape):
         return input_shape
