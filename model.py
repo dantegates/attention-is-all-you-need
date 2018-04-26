@@ -12,13 +12,13 @@ import subprocess as sp
 
 import keras
 import numpy as np
+import tensorflow as tf
 from keras import backend as K
 from keras import activations
-from keras.engine.topology import Layer, InputSpec
+from keras.engine.topology import InputSpec, Layer
 from keras.initializers import RandomNormal
-from keras.layers import Add, Dense, Embedding, Input, Dropout
+from keras.layers import Add, Dense, Dropout, Embedding, Input
 from keras.models import Model, load_model
-
 
 # TODO
 # - keyword only arguments
@@ -291,14 +291,12 @@ class AttentionHead(Layer):
         x = self.activation(attention_weights)
         return K.batch_dot(x, v_p)
 
-    def mask(self, x):
-        shape = K.int_shape(x)
-        assert shape[1] == shape[2], 'expected square matrix'
-        mask = np.zeros((shape[1], shape[1]))
-        invalid_indices = np.triu_indices(shape[1], 1)
-        mask[invalid_indices] = 1e-15
-        mask = K.variable(mask)
-        return x + mask
+    @staticmethod
+    def mask(inputs):
+        mask = K.zeros_like(inputs)
+        mask -= 1e15
+        mask = tf.matrix_band_part(inputs, 1, -1)
+        return inputs + mask
 
     def compute_output_shape(self, input_shape):
         if isinstance(input_shape, list):
