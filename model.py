@@ -323,7 +323,7 @@ class PositionalEncoding(Layer):
         self.encoding = self.make_encoding(d_model, max_sequence_len)
 
     def call(self, inputs):
-        return inputs + self.encoding[K.shape(inputs)[1]:,:]
+        return inputs + self.encoding[:K.shape(inputs)[1],:]
 
     @staticmethod
     def make_encoding(d_model, sequence_len):
@@ -410,6 +410,7 @@ def init_cli():
     parser.add_argument('--summarize-encoder', action='store_true', default=False)
     parser.add_argument('--plot-model', action='store_true', default=False)
     parser.add_argument('--plot-encoder', action='store_true', default=False)
+    parser.add_argument('--test-train', action='store_true', default=False)
     parser.add_argument('--debug', action='store_true', default=False)
     parser.add_argument('--save-model', action='store_true', default=False)
     cli = parser.parse_args(sys.argv[1:])
@@ -426,6 +427,7 @@ if __name__ == '__main__':
     SEQUENCE_LEN = None
     MAX_SEQUENCE_LEN = 30
     SHARE_EMBEDDING_WEIGHTS = False
+    BATCH_SIZE = 32
     CLI = init_cli()
     _ = logging.basicConfig(level='DEBUG') if CLI.debug  else None
 
@@ -433,6 +435,7 @@ if __name__ == '__main__':
         n_heads=N_HEADS, encoder_layers=ENCODER_LAYERS, decoder_layers=DECODER_LAYERS,
         d_model=D_MODEL, vocab_size=VOCAB_SIZE, sequence_len=SEQUENCE_LEN, max_sequence_len=MAX_SEQUENCE_LEN,
         share_embedding_weights=SHARE_EMBEDDING_WEIGHTS)
+    model.compile(loss='categorical_crossentropy', optimizer='adam')
 
     if CLI.summarize_encoder:
         print('ENCODER SUMMARY')
@@ -446,6 +449,11 @@ if __name__ == '__main__':
     if CLI.plot_model:
         keras.utils.plot_model(model, 'model.png', show_shapes=True)
         sp.call(['open', 'model.png'])
+    if CLI.test_train:
+        X1 = np.random.randint(0, VOCAB_SIZE, size=(BATCH_SIZE, 20))
+        X2 = np.random.randint(0, VOCAB_SIZE, size=(BATCH_SIZE, 15))
+        model.predict([X1, X1])
+        model.predict([X2, X2])
     if CLI.save_model:
         X = np.random.randint(0, VOCAB_SIZE, size=SEQUENCE_LEN)
         X = [X, X]
