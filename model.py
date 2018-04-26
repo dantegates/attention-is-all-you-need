@@ -359,62 +359,6 @@ class Scalar(Layer):
         return config
 
 
-class FFN(Layer):
-    def __init__(self, units, activation, **kwargs):
-        self.units = units
-        self._activation = activation
-        self.activation = activations.get(activation)
-        self.bias_regularizer = None
-        self.bias_constraint = None
-        super().__init__(**kwargs)
-
-    def build(self, input_shape):
-        input_dim = input_shape[-1]
-
-        self.kernel1 = self.add_weight(shape=(input_dim, self.units),
-                                       initializer='glorot_uniform',
-                                       name='kernel1',
-                                       regularizer=None,
-                                       constraint=None,
-                                       trainable=True)
-        self.bias1 = self.add_weight(shape=(self.units,),
-                                     initializer='zeros',
-                                     name='bias1',
-                                     regularizer=self.bias_regularizer,
-                                     constraint=self.bias_constraint,
-                                     trainable=True)
-        self.kernel2 = self.add_weight(shape=(input_dim, self.units),
-                                       initializer='glorot_uniform',
-                                       name='kernel2',
-                                       regularizer=None,
-                                       constraint=None,
-                                       trainable=True)
-        self.bias2 = self.add_weight(shape=(self.units,),
-                                     initializer='zeros',
-                                     name='bias2',
-                                     regularizer=self.bias_regularizer,
-                                     constraint=self.bias_constraint,
-                                     trainable=True)
-        self.input_spec = InputSpec(min_ndim=2, axes={-1: input_dim})
-        super().build(input_shape)
-
-    def call(self, x):
-        output = self.activation(K.bias_add(K.dot(x, self.kernel1), self.bias1))
-        return K.bias_add(K.dot(output, self.kernel2), self.bias2)
-
-    def compute_output_shape(self, input_shape):
-        assert input_shape and len(input_shape) >= 2
-        assert input_shape[-1]
-        output_shape = list(input_shape)
-        output_shape[-1] = self.units
-        return tuple(output_shape)
-
-    def get_config(self):
-        config = super().get_config()
-        config['units'] = self.units
-        config['activation'] = self._activation
-
-
 class LayerNormalization(Layer):
     def __init__(self, **kwargs):
         self.epsilon = 1e-6
