@@ -328,7 +328,7 @@ class PositionalEncoding(Layer):
         def gen():
             for i in range(d_model):
                 f = np.sin if i % 2 == 0 else np.cos
-                yield f(np.arange(sequence_len) / ((10000**(2*i/d_model))))
+                yield f(np.arange(sequence_len) / ((10_000**(2*i/d_model))))
         arr = np.array(list(gen())).transpose()
         return K.variable(arr)
 
