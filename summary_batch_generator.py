@@ -1,31 +1,8 @@
 import numpy as np
 from keras.preprocessing.sequence import pad_sequences
+
+import sys; sys.path.append('..')
 from data import BaseBatchGenerator
-
-
-class TrainingExample:
-    """Simple container to keep track of training data. Useful for debugging."""
-    def __init__(self, item, context_text, target_text, context_tokens,
-                 target_tokens):
-        self.item = item
-        self.context_text = context_text
-        self.target_text = target_text
-        self.context_tokens = context_tokens
-        self.target_tokens = target_tokens
-
-
-def load_files(files, tokenizer):
-    """Load and tokenize files."""
-    training_examples = []
-    for file in files:
-        with open(file) as f:
-            context_text, target_text = f.read().split('\t')
-        context_tokens = tokenizer(context_text)
-        target_tokens = tokenizer(target_text)
-        example = TrainingExample(file, context_text, target_text,
-                                  context_tokens, target_tokens)
-        training_examples.append(example)
-    return training_examples
 
 
 class SummaryBatchGenerator(BaseBatchGenerator):
@@ -48,28 +25,30 @@ class SummaryBatchGenerator(BaseBatchGenerator):
             encoder_tokens = example.context_tokens
         decoder_tokens = example.target_tokens + [self.eos_token] if self.prepend else []
         decoder_tokens += example.target_tokens + [self.eos_token]
-        training_step = encoder_tokens, decoder_tokens
+        training_step = encoder_tokens, decoder_tokens, len(example)
         return [training_step]
 
     def generate_batches(self, steps, batch_size):
         batches = []
         min_batch_size = 0.95 * batch_size
         max_batch_size = 1.05 * batch_size
-        step_sizes = [len(e_toks) + len(d_toks) for e_toks, d_toks in steps]
+        step_sizes = [size for _, _, size in steps]
         current_batch_x1s = []
         current_batch_x2s = []
         current_batch_size = 0
-        i = None
         items = enumerate(zip(steps, step_sizes, step_sizes[1:]))
+        max_used_i = 0
         for i, (step, step_size, next_step_size) in items:
             if step_size > max_batch_size:
                 print(f'skipping step with size {step_size}')
                 continue
-            encoder_tokens, decoder_tokens = step
+            encoder_tokens, decoder_tokens, _ = step
             current_batch_x1s.append(encoder_tokens)
             current_batch_x2s.append(decoder_tokens)
             current_batch_size += step_size
-            if min_batch_size <= current_batch_size + next_step_size <= max_batch_size:
+            if min_batch_size <= current_batch_size <= max_batch_size or \
+                    current_batch_size + next_step_size > max_batch_size:
+                max_used_i = i
                 x1 = pad_sequences(current_batch_x1s, value=self.pad_token)
                 x2 = pad_sequences(current_batch_x2s, value=self.pad_token)
                 X = [x1, x2[:,:-1]]
@@ -81,4 +60,4 @@ class SummaryBatchGenerator(BaseBatchGenerator):
             # then break
             if sum(step_sizes[i+1:]) < batch_size:
                 break
-        return (batches, steps[i+1:]) if i is not None else (batches, steps)
+        return (batches, steps[max_used_i+1:]) if max_used_i > 0 else (batches, steps)
