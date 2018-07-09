@@ -105,3 +105,8 @@ ENV/
 *.h5
 *.tgz
 *.zip
+.png
+.vocab
+.model
+*.model
+*.vocab
