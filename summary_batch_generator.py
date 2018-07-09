@@ -1,4 +1,3 @@
-import random
 import numpy as np
 from keras.preprocessing.sequence import pad_sequences
 from data import BaseBatchGenerator
@@ -19,9 +18,10 @@ def load_files(files, tokenizer):
     """Load and tokenize files."""
     training_examples = []
     for file in files:
-        context_text, target_text = self.load_file_contents(file)
-        context_tokens = self.tokenizer(context_text)
-        target_tokens = self.tokenizer(target_text)
+        with open(file) as f:
+            context_text, target_text = f.read().split('\t')
+        context_tokens = tokenizer(context_text)
+        target_tokens = tokenizer(target_text)
         example = TrainingExample(file, context_text, target_text,
                                   context_tokens, target_tokens)
         training_examples.append(example)
@@ -29,76 +29,56 @@ def load_files(files, tokenizer):
 
 
 class SummaryBatchGenerator(BaseBatchGenerator):
-    def __init__(self, max_context_len, max_target_len, eos_token):
+    def __init__(self, max_context_len=None, max_target_len=None, eos_token=-1,
+                 pad_token=0, prepend=True):
         self.max_context_len = max_context_len
         self.max_target_len = max_target_len
         self.eos_token = eos_token
+        self.pad_token = pad_token
+        self.prepend = prepend
 
     def generate_steps(self, item):
-        example = item  # simple alias
-        if len(example.target_tokens) > self.max_target_len:
+        example = item  # alias
+        if self.max_target_len is not None \
+                and len(example.target_tokens) > self.max_target_len:
             return []
-        encoder_tokens = example.context_tokens[:self.max_context_len]
-        # see
-        # https://github.com/tensorflow/tensor2tensor/blob/ea576658c608d8b805bbe64c1c85814a96b879b9/tensor2tensor/layers/common_hparams.py#L199
-        decoder_tokens = example.target_tokens \
-                       + [self.eos_token] \
-                       + training_example.target_tokens \
-                       + [self.eos_token]
-        training_step = self.pad(encoder_tokens), self.pad(decoder_tokens)
+        if self.max_context_len is not None:
+            encoder_tokens = example.context_tokens[:self.max_context_len]
+        else:
+            encoder_tokens = example.context_tokens
+        decoder_tokens = example.target_tokens + [self.eos_token] if self.prepend else []
+        decoder_tokens += example.target_tokens + [self.eos_token]
+        training_step = encoder_tokens, decoder_tokens
         return [training_step]
 
     def generate_batches(self, steps, batch_size):
         batches = []
-        current_batch = []
+        min_batch_size = 0.95 * batch_size
+        max_batch_size = 1.05 * batch_size
+        step_sizes = [len(e_toks) + len(d_toks) for e_toks, d_toks in steps]
+        current_batch_x1s = []
+        current_batch_x2s = []
         current_batch_size = 0
-        for i, training_step in enumerate(steps):
-            encoder_tokens, decoder_tokens = training_step
-            training_step_size = len(encoder_tokens) + len(decoder_tokens)
-            if current_batch_size + training_step_size <= batch_size:
-                current_batch_size += training_step_size
-        return batches, steps[i:]
-
-    def pad(self, tokens, prepend=False):
-        # add 1 to sentence_len since we shift output one step forward to prevent
-        # model from attending to future time steps
-        tokens = pad_sequences(
-            [tokens], maxlen=self.sentence_len, padding='post',
-            truncating='post', value=self.pad_token)
-        if prepend:
-            tokens = pad_sequences(
-                [tokens[0]], maxlen=self.sentence_len+1, padding='pre',
-                value=self.pad_token)
-        return tokens[0]
-
-
-
-
-
-
-
-    def generate_batches(self, steps, batch_size, n_batches):
-        for i in range(n_batches):
-            start, stop = i*batch_size, (i+1)*batch_size
-            batch_steps = steps[start:stop]
-            encoder_steps, decoder_steps = zip(*batch_steps)
-            x1 = np.array(encoder_steps)
-            x2 = np.array(decoder_steps)
-            # offset target from decoder input
-            X = [x1, x2[:,:-1]]
-            y = x2[:,1:]
-            yield X, y
-
-
-
-    
-    def to_arrays(self, items, batch_size):
-        x1s, x2s, ys = [], [], []
-        for X, y in self.generate_epoch(items, batch_size):
-            x1, x2 = X
-            x1s.append(x1)
-            x2s.append(x2)
-            ys.append(y)
-        X = [np.concatenate(x1s), np.concatenate(x2s)]
-        y = np.concatenate(ys)
-        return X, y
+        i = None
+        items = enumerate(zip(steps, step_sizes, step_sizes[1:]))
+        for i, (step, step_size, next_step_size) in items:
+            if step_size > max_batch_size:
+                print(f'skipping step with size {step_size}')
+                continue
+            encoder_tokens, decoder_tokens = step
+            current_batch_x1s.append(encoder_tokens)
+            current_batch_x2s.append(decoder_tokens)
+            current_batch_size += step_size
+            if min_batch_size <= current_batch_size + next_step_size <= max_batch_size:
+                x1 = pad_sequences(current_batch_x1s, value=self.pad_token)
+                x2 = pad_sequences(current_batch_x2s, value=self.pad_token)
+                X = [x1, x2[:,:-1]]
+                y = x2[:,1:]
+                batches.append((X, y))
+                current_batch_size = 0
+                current_batch_x1s, current_batch_x2s = [], []
+            # if there aren't enough steps left to create a full sized batch
+            # then break
+            if sum(step_sizes[i+1:]) < batch_size:
+                break
+        return (batches, steps[i+1:]) if i is not None else (batches, steps)
