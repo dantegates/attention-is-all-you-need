@@ -1,15 +1,14 @@
 import numpy as np
-from keras.preprocessing.sequence import pad_sequences
-
-import sys; sys.path.append('..')
 from data import BaseBatchGenerator
+from keras.preprocessing.sequence import pad_sequences
 
 
 class SummaryBatchGenerator(BaseBatchGenerator):
-    def __init__(self, max_context_len=None, max_target_len=None, eos_token=-1,
-                 pad_token=0, prepend=True):
+    def __init__(self, max_context_len=None, max_target_len=None, pad_token=0,
+                 bos_token=1, eos_token=2, prepend=False):
         self.max_context_len = max_context_len
         self.max_target_len = max_target_len
+        self.bos_token = bos_token
         self.eos_token = eos_token
         self.pad_token = pad_token
         self.prepend = prepend
@@ -23,8 +22,12 @@ class SummaryBatchGenerator(BaseBatchGenerator):
             encoder_tokens = example.context_tokens[:self.max_context_len]
         else:
             encoder_tokens = example.context_tokens
-        decoder_tokens = example.target_tokens + [self.eos_token] if self.prepend else []
-        decoder_tokens += example.target_tokens + [self.eos_token]
+        if self.prepend:
+            decoder_tokens = np.append(example.context_tokens, self.eos_token)
+        else:
+            decoder_tokens = np.array([])
+        decoder_tokens = np.append(decoder_tokens, example.target_tokens)
+        decoder_tokens = np.append(decoder_tokens, self.eos_token)
         training_step = encoder_tokens, decoder_tokens, len(example)
         return [training_step]
 
