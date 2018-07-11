@@ -18,6 +18,7 @@ from keras.engine.topology import Layer, InputSpec
 from keras.initializers import RandomNormal
 from keras.layers import Add, Dense, Embedding, Input, Dropout
 from keras.models import Model, load_model
+import tensorflow as tf
 
 
 # TODO
@@ -53,7 +54,7 @@ class Transformer(Model):
         self.encoder_embedding, self.decoder_embedding, self.embedding_weights = self.init_embeddings()
         self.encoder = self.init_encoder()
         self.decoder = self.init_decoder()
-        self.encoder_model = Model(self.encoder_input, self.encoder)
+        # self.encoder_model = Model(inputs=[self.encoder_input], outputs=[self.encoder])
         super().__init__(inputs=[self.encoder_input, self.decoder_input],
                          outputs=self.decoder)
 
@@ -66,7 +67,7 @@ class Transformer(Model):
         embedding = Embedding(input_dim=self.vocab_size, output_dim=self.d_model,
                               input_length=self.sequence_len, name='embedding')
         embedding_scalar = Scalar(np.sqrt(self.d_model), name='embedding_scalar')
-        positional_encoding = PositionalEncoding(self.d_model, self.sequence_len)        
+        positional_encoding = PositionalEncoding()
 
         encoder_embedding = embedding(self.encoder_input)
         encoder_embedding = positional_encoding(encoder_embedding)
@@ -289,12 +290,9 @@ class AttentionHead(Layer):
         return K.batch_dot(x, v_p)
 
     def mask(self, x):
-        shape = K.int_shape(x)
-        assert shape[1] == shape[2], 'expected square matrix'
-        mask = np.zeros((shape[1], shape[1]))
-        invalid_indices = np.triu_indices(shape[1], 1)
-        mask[invalid_indices] = 1e-15
-        mask = K.variable(mask)
+        shape = K.shape(x)
+        mask = K.zeros((shape[1], shape[2])) + (-1*1e15)
+        mask = tf.matrix_band_part(mask, 0, -1)
         return x + mask
 
     def compute_output_shape(self, input_shape):
@@ -315,31 +313,31 @@ class AttentionHead(Layer):
 
 
 class PositionalEncoding(Layer):
-    def __init__(self, d_model, sequence_len, **kwargs):
-        super().__init__(**kwargs)
-        self.d_model = d_model
-        self.sequence_len = sequence_len
-        self.encoding = self.make_encoding(d_model, sequence_len)
-
     def call(self, inputs):
-        return self.encoding + inputs
-
-    def make_encoding(self, d_model, sequence_len):
-        def gen():
-            for i in range(d_model):
-                f = np.sin if i % 2 == 0 else np.cos
-                yield f(np.arange(sequence_len) / ((10_000**(2*i/d_model))))
-        arr = np.array(list(gen())).transpose()
-        return K.variable(arr)
+        sequence_dim = K.shape(inputs)[1]
+        d_model_var = K.shape(inputs)[2]
+        d_model_int = K.int_shape(inputs)[2]
+        rows, cols = self.indices(sequence_dim, d_model_var)
+        rows, cols = K.cast(rows, dtype=K.floatx()), K.cast(cols, dtype=K.floatx())
+        numerator = K.switch(cols % 2, K.sin(rows), K.cos(rows))
+        denominator = 10_000**((2*cols)/d_model_int)
+        return inputs + (numerator / denominator)
 
     def compute_output_shape(self, input_shape):
         return input_shape
 
-    def get_config(self):
-        config = super().get_config()
-        config['d_model'] = self.d_model
-        config['sequence_len'] = self.sequence_len
-        return config
+    @staticmethod
+    def indices(dim1, dim2):
+        """Return array representing the indices of a grid. 
+
+        Like `numpy.indices` but works with `keras` types
+        # https://docs.scipy.org/doc/numpy-1.14.0/reference/generated/numpy.indices.html
+        """
+        rows = K.arange(dim1)
+        cols = K.arange(dim2)
+        col_indices = K.reshape(K.tile(cols, [dim1]), (dim1, dim2))
+        row_indices = K.transpose(K.reshape(K.tile(rows, [dim2]), (dim2, dim1)))
+        return row_indices, col_indices
 
 
 class Scalar(Layer):
