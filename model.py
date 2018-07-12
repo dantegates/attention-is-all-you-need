@@ -233,7 +233,6 @@ class MultiHeadAttention(Layer):
 
     def compute_output_shape(self, input_shape):
         if isinstance(input_shape, list):
-            assert len(set(input_shape)) == 1, 'k, q, and v must be of same shape'
             shape = input_shape[0]
         else:
             shape = input_shape
@@ -260,7 +259,6 @@ class AttentionHead(Layer):
 
     def build(self, input_shape):
         if isinstance(input_shape, list):
-            assert len(set(input_shape)) == 1, 'k, q, and v must be of same shape'
             shape = input_shape[0]
         else:
             shape = input_shape
@@ -294,10 +292,12 @@ class AttentionHead(Layer):
         x = self.activation(attention_weights)
         return K.batch_dot(x, v_p)
 
-    def mask(self, x):
+    @staticmethod
+    def mask(x):
         shape = K.shape(x)
-        mask = K.zeros((shape[1], shape[2])) + (-1*1e15)
-        mask = tf.matrix_band_part(mask, 0, -1)
+        mask = K.zeros((shape[1], shape[2])) + (-1e15)
+        mask = tf.matrix_band_part(mask, 0, -1)  # upper triangle of `mask`
+        mask -= tf.matrix_band_part(mask, 0, 0)  # remove diagonal
         return x + mask
 
     def compute_output_shape(self, input_shape):
