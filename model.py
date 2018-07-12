@@ -4,8 +4,6 @@ Implementation of Transformer model, as described here
     https://arxiv.org/pdf/1706.03762.pdf
 """
 
-from __future__ import absolute_import, division, print_function
-
 import argparse
 import logging
 import subprocess as sp
@@ -22,9 +20,10 @@ import tensorflow as tf
 
 
 # TODO
-# - keyword only arguments
 # - visualize attention
 # - load method
+# - enable encoder/decoder only architectures
+# - docstrings/comments
 
 
 logger = logging.getLogger(__name__)
@@ -34,7 +33,8 @@ class Transformer(Model):
     def __init__(self, n_heads=None, sequence_len=None, encoder_layers=None,
                  decoder_layers=None, d_model=None, d_k=None, d_v=None, vocab_size=None,
                  layer_normalization=True, dropout=0.1, residual_connections=True,
-                 share_embedding_weights=True, output_activation='softmax'):
+                 share_embedding_weights=True, output_activation='softmax',
+                 inputs=None, outputs=None, **kwargs):
         # define attributes
         self.n_heads = n_heads
         self.sequence_len = sequence_len
@@ -50,13 +50,19 @@ class Transformer(Model):
         self.share_embedding_weights = share_embedding_weights
         self.output_activation = output_activation
 
+        if inputs is None and outputs is None:
+            inputs, outputs = self.build_inputs_outputs()
+        else:
+            self.decoder = outputs
+        super().__init__(inputs=inputs, outputs=outputs, **kwargs)
+
+    def build_inputs_outputs(self):
         self.encoder_input, self.decoder_input = self.init_input()
         self.encoder_embedding, self.decoder_embedding, self.embedding_weights = self.init_embeddings()
         self.encoder = self.init_encoder()
         self.decoder = self.init_decoder()
         # self.encoder_model = Model(inputs=[self.encoder_input], outputs=[self.encoder])
-        super().__init__(inputs=[self.encoder_input, self.decoder_input],
-                         outputs=self.decoder)
+        return [self.encoder_input, self.decoder_input], self.decoder
 
     def init_input(self):
         encoder_input = Input(shape=(None,), name='encoder_input')
@@ -192,7 +198,7 @@ class Transformer(Model):
 
 
 class MultiHeadAttention(Layer):
-    def __init__(self, n_heads, d_model, d_k, d_v, masking=False, **kwargs):
+    def __init__(self, n_heads, d_model, d_k=None, d_v=None, masking=False, **kwargs):
         # activation = comparison
         logger.debug('init MultiHeadAttention')
         assert d_model % n_heads == 0, 'h must divide d_model evenly'
@@ -205,7 +211,6 @@ class MultiHeadAttention(Layer):
         
     def build(self, input_shape):
         if isinstance(input_shape, list):
-            assert len(set(input_shape)) == 1, 'k, q, and v must be of same shape'
             shape = input_shape[0]
         else:
             shape = input_shape
@@ -319,7 +324,7 @@ class PositionalEncoding(Layer):
         d_model_int = K.int_shape(inputs)[2]
         rows, cols = self.indices(sequence_dim, d_model_var)
         rows, cols = K.cast(rows, dtype=K.floatx()), K.cast(cols, dtype=K.floatx())
-        numerator = K.switch(cols % 2, K.sin(rows), K.cos(rows))
+        numerator = K.switch(cols % 2, K.cos(rows), K.sin(rows))
         denominator = 10_000**((2*cols)/d_model_int)
         return inputs + (numerator / denominator)
 
@@ -412,6 +417,16 @@ def init_cli():
     return cli
 
 
+CUSTOM_OBJECTS = {
+    'Transformer': Transformer,
+    'MultiHeadAttention': MultiHeadAttention,
+    'AttentionHead': AttentionHead,
+    'PositionalEncoding': PositionalEncoding,
+    'Scalar': Scalar,
+    'LayerNormalization': LayerNormalization,
+    'SharedWeights': SharedWeights,
+}
+
 if __name__ == '__main__':
     import sys
 
@@ -425,32 +440,25 @@ if __name__ == '__main__':
     _ = logging.basicConfig(level='DEBUG') if CLI.debug  else None
 
     model = Transformer(
-        n_heads=N_HEADS, encoder_layers=ENCODER_LAYERS, decoder_layers=DECODER_LAYERS,
-        d_model=D_MODEL, vocab_size=VOCAB_SIZE, sequence_len=SEQUENCE_LEN,
+        n_heads=N_HEADS, encoder_layers=ENCODER_LAYERS,
+        decoder_layers=DECODER_LAYERS,
+        d_model=D_MODEL, vocab_size=VOCAB_SIZE, sequence_len=None,
         share_embedding_weights=SHARE_EMBEDDING_WEIGHTS)
 
-    if CLI.summarize_encoder:
-        print('ENCODER SUMMARY')
-        model.encoder_model.summary(line_length=100)
     if CLI.summarize_model:
         print('MODEL SUMMARY')
         model.summary(line_length=100)
-    if CLI.plot_encoder:
-        keras.utils.plot_model(model.encoder_model, 'encoder.png', show_shapes=True)
-        sp.call(['open', 'encoder.png'])
     if CLI.plot_model:
         keras.utils.plot_model(model, 'model.png', show_shapes=True)
         sp.call(['open', 'model.png'])
     if CLI.save_model:
-        X = np.random.randint(0, VOCAB_SIZE, size=SEQUENCE_LEN)
+        X = np.random.randint(0, VOCAB_SIZE, size=SEQUENCE_LEN).reshape(1, -1)
         X = [X, X]
         p1 = model.predict(X)
+        print(p1.shape)
         model.save('test_model_save.h5')
-        # so far this is an unsatisfying, solution.
-        # model = Transformer(
-        #     n_heads=n_heads, encoder_layers=encoder_layers, decoder_layers=decoder_layers,
-        #     d_model=d_model, vocab_size=vocab_size, sequence_len=sequence_len)
-        model = load_model('test_model_save.h5', custom_objects=locals())
+        model = load_model('test_model_save.h5', custom_objects=CUSTOM_OBJECTS)
         p2 = model.predict(X)
+        print(p2.shape)
         print(p1, p2)
-        assert (p1 == p2).all(), 'weights not saved and/or loaded properly'
+        assert np.allclose(p1, p2), 'weights not saved and/or loaded properly'
