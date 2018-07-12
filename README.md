@@ -11,6 +11,8 @@ keras implementation of attention is all you need
 
 - [summary_batch_generator.py](./summary_batch_generator.py) This class is implemented in the [training notebook](./notebooks.train.ipynb). Eventually this file will be removed.
 
+- [test.py](./test.py) Unit tests. Run with `python test.py`.
+
 # notebooks
 
 - [preprocess-stories](./notebooks/preprocess-stories.ipynb) Builds the summary data set. I.e. Writes to disk the story with summary built from higlights.
