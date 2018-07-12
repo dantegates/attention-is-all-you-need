@@ -57,17 +57,17 @@ class Transformer(Model):
         super().__init__(inputs=inputs, outputs=outputs, **kwargs)
 
     def build_inputs_outputs(self):
-        self.encoder_input, self.decoder_input = self.init_input()
-        self.encoder_embedding, self.decoder_embedding, self.embedding_weights = self.init_embeddings()
+        self.encoder_input_spec, self.decoder_input_spec = self.init_input()
+        self.encoder_layer_input, self.decoder_layer_input, self.embedding_weights = self.init_embeddings()
         self.encoder = self.init_encoder()
         self.decoder = self.init_decoder()
         # self.encoder_model = Model(inputs=[self.encoder_input], outputs=[self.encoder])
-        return [self.encoder_input, self.decoder_input], self.decoder
+        return [self.encoder_input_spec, self.decoder_input_spec], self.decoder
 
     def init_input(self):
-        encoder_input = Input(shape=(None,), name='encoder_input')
-        decoder_input = Input(shape=(None,), name='decoder_input')
-        return encoder_input, decoder_input
+        encoder_input_spec = Input(shape=(None,), name='encoder_input_spec')
+        decoder_input_spec = Input(shape=(None,), name='decoder_input_spec')
+        return encoder_input_spec, decoder_input_spec
 
     def init_embeddings(self):
         embedding = Embedding(input_dim=self.vocab_size, output_dim=self.d_model,
@@ -75,26 +75,26 @@ class Transformer(Model):
         embedding_scalar = Scalar(np.sqrt(self.d_model), name='embedding_scalar')
         positional_encoding = PositionalEncoding()
 
-        encoder_embedding = embedding(self.encoder_input)
-        encoder_embedding = positional_encoding(encoder_embedding)
-        encoder_embedding = embedding_scalar(encoder_embedding)
+        encoder_layer_input = embedding(self.encoder_input_spec)
+        encoder_layer_input = positional_encoding(encoder_layer_input)
+        encoder_layer_input = embedding_scalar(encoder_layer_input)
         if self.dropout:
-            encoder_embedding = Dropout(self.dropout)(encoder_embedding)
+            encoder_layer_input = Dropout(self.dropout)(encoder_layer_input)
 
-        decoder_embedding = embedding(self.decoder_input)
-        decoder_embedding = positional_encoding(decoder_embedding)
-        decoder_embedding = embedding_scalar(decoder_embedding)
+        decoder_layer_input = embedding(self.decoder_input_spec)
+        decoder_layer_input = positional_encoding(decoder_layer_input)
+        decoder_layer_input = embedding_scalar(decoder_layer_input)
         if self.dropout:
-            decoder_embedding = Dropout(self.dropout)(decoder_embedding)
+            decoder_layer_input = Dropout(self.dropout)(decoder_layer_input)
 
         embedding_weights = embedding.embeddings if self.share_embedding_weights else None
 
-        return encoder_embedding, decoder_embedding, embedding_weights
+        return encoder_layer_input, decoder_layer_input, embedding_weights
 
     def init_encoder(self):
         # make encoder
         logger.debug('making encoder')
-        encoder_layer_input = self.encoder_embedding
+        encoder_layer_input = self.encoder_layer_input
         for i in range(1, self.encoder_layers+1):
             names = iter([
                 'encoder_layer%s_mha' % i,
@@ -128,7 +128,7 @@ class Transformer(Model):
 
     def init_decoder(self):
         # make decoder
-        decoder_layer_input = self.decoder_embedding
+        decoder_layer_input = self.decoder_layer_input
         logger.debug('making decoder')
         for i in range(1, self.decoder_layers+1):
             names = iter([
