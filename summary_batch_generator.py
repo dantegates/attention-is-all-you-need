@@ -38,7 +38,6 @@ class SummaryBatchGenerator(BaseBatchGenerator):
         step_sizes = [size for _, _, size in steps]
         current_batch_x1s = []
         current_batch_x2s = []
-        current_batch_size = 0
         items = enumerate(zip(steps, step_sizes, step_sizes[1:]))
         max_used_i = 0
         for i, (step, step_size, next_step_size) in items:
@@ -48,19 +47,18 @@ class SummaryBatchGenerator(BaseBatchGenerator):
             encoder_tokens, decoder_tokens, _ = step
             current_batch_x1s.append(encoder_tokens)
             current_batch_x2s.append(decoder_tokens)
-            current_batch_size += step_size
-            if min_batch_size <= current_batch_size <= max_batch_size or \
-                    current_batch_size + next_step_size > max_batch_size:
-                max_used_i = i
-                x1 = pad_sequences(current_batch_x1s, value=self.pad_token)
-                x2 = pad_sequences(current_batch_x2s, value=self.pad_token)
+            next_batch_size = (len(current_batch_x1s) + 1) * next_step_size  # account for padding
+            if next_step_size > max_batch_size:
+                x1 = pad_sequences(current_batch_x1s, value=self.pad_token, padding='post')
+                x2 = pad_sequences(current_batch_x2s, value=self.pad_token, padding='post')
                 X = [x1, x2[:,:-1]]
                 y = x2[:,1:]
                 batches.append((X, y))
                 current_batch_size = 0
                 current_batch_x1s, current_batch_x2s = [], []
             # if there aren't enough steps left to create a full sized batch
-            # then break
+            # then break, the leftover steps will be added to the next call
+            # to generate_batches()
             if sum(step_sizes[i+1:]) < batch_size:
                 break
         return (batches, steps[max_used_i+1:]) if max_used_i > 0 else (batches, steps)
