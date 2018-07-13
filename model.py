@@ -452,13 +452,14 @@ if __name__ == '__main__':
         keras.utils.plot_model(model, 'model.png', show_shapes=True)
         sp.call(['open', 'model.png'])
     if CLI.save_model:
-        X = np.random.randint(0, VOCAB_SIZE, size=SEQUENCE_LEN).reshape(1, -1)
-        X = [X, X]
+        x = np.random.randint(0, VOCAB_SIZE, size=SEQUENCE_LEN).reshape(1, -1)
+        X = [x, x[:,:-1]]
+        y = np.eye(VOCAB_SIZE)[x[:,1:]]
+        model.compile(loss='categorical_crossentropy', optimizer='adam')
+        model.fit(X, y, epochs=40)
         p1 = model.predict(X)
-        print(p1.shape)
         model.save('test_model_save.h5')
         model = load_model('test_model_save.h5', custom_objects=CUSTOM_OBJECTS)
         p2 = model.predict(X)
-        print(p2.shape)
         print(p1, p2)
         assert np.allclose(p1, p2), 'weights not saved and/or loaded properly'
