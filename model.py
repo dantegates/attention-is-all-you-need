@@ -30,26 +30,77 @@ logger = logging.getLogger(__name__)
 
 
 class Transformer(Model):
-    def __init__(self, n_heads=None, sequence_len=None, encoder_layers=None,
-                 decoder_layers=None, d_model=None, d_k=None, d_v=None, vocab_size=None,
-                 layer_normalization=True, dropout=0.1, residual_connections=True,
-                 share_embedding_weights=True, output_activation='softmax',
+    """Transformer model class
+
+    Args:
+        encoder_layers (int): The number of encoder layers.
+        decoder_layers (int): The number of decoder layers.
+        n_heads (int): The number of heads to use in multi-head attention
+            layers.
+        d_model (int): The dimension of the word embeddings used. Corresponds
+            the value `d_model` in the paper. Must be a divisor of `n_heads`.
+        d_k (int or None): If an `int` this is the dimension of the linear
+            transformation applied to the "keys" in multi-head-attention
+            layers. Corresponds to the value `d_k` in the paper. If `None`
+            defaults to `d_model / n_heads`.
+        d_v (int or None): If an `int` this is the dimension of the linear
+            transformation applied to the "values" in multi-head-attention
+            layers. Corresponds to the value `d_v` in the paper. If `None`
+            defaults to `d_model / n_heads`.
+        vocab_size (int): The number of unique tokens to create embeddings
+            for.
+        sequence_len (int or None): The length of the sequences. If an `int`
+            is passed both the encoder/decoder embeddings will be initialized
+            with this value as the sequence length. If `None` variable length
+            sequences are allowed for both the encoder and decoder. `None` by
+            default.
+        preprocess_steps (list): `list` of `str` or `tuple` values describing
+            how sublayers are to be preprocessed. Valid values are
+            `('dropout', <dropout rate>)` and `'layer_normalization'`. Steps
+            will be applied to the layer in the order they appear. (Optional)
+        postprocess_steps (list): Same as `preprocess_steps`
+            with the addition of being able to pass `'residual_connections'`
+            in the list. (Optional)
+        share_embedding_weights (bool): Whether the embedding weights should
+            be shared with the final linear transformation in the model.
+        positional_encoding_dropout (bool or float): If `False` dropout is not
+            applied to the word embeddings after positional encoding is
+            applied. If a `float`, dropout is applied and
+            `positional_encoding_dropout` is the rate used.
+        output_activation (str): Any valid keras activation argument. Defaults
+            to `'softmax'`
+        inputs (None): This is a `keras` load/save implementation detail. Do
+            not pass.
+        outputs (None): This is a `keras` load/save implementation detail. Do
+            not pass.
+        **kwargs: This is a `keras` load/save implementation detail. Do
+            not pass.
+    """
+    def __init__(self, *,
+                 encoder_layers=None, decoder_layers=None,
+                 n_heads=None, d_model=None, d_k=None, d_v=None,
+                 vocab_size=None, sequence_len=None,
+                 preprocess_steps=None, postprocess_steps=None,
+                 share_embedding_weights=True,
+                 positional_encoding_dropout=0.1,
+                 output_activation='softmax',
                  inputs=None, outputs=None, **kwargs):
         # define attributes
         self.n_heads = n_heads
         self.sequence_len = sequence_len
         self.encoder_layers = encoder_layers
         self.decoder_layers = decoder_layers
+        self.positional_encoding_dropout = positional_encoding_dropout
         self.d_model = d_model
         self.d_k = d_k
         self.d_v = d_v
-        self.vocab_size = vocab_size
-        self.layer_normalization = layer_normalization
-        self.dropout = dropout
-        self.residual_connections = residual_connections
+        self.vocab_size = vocab_size        
+        self.preprocess_steps = [] if preprocess_steps is None else preprocess_steps
+        self.postprocess_steps = [] if postprocess_steps is None else postprocess_steps
         self.share_embedding_weights = share_embedding_weights
         self.output_activation = output_activation
 
+        # set inputs/outputs appropriate 
         if inputs is None and outputs is None:
             inputs, outputs = self.build_inputs_outputs()
         else:
@@ -61,7 +112,6 @@ class Transformer(Model):
         self.encoder_layer_input, self.decoder_layer_input, self.embedding_weights = self.init_embeddings()
         self.encoder = self.init_encoder()
         self.decoder = self.init_decoder()
-        # self.encoder_model = Model(inputs=[self.encoder_input], outputs=[self.encoder])
         return [self.encoder_input_spec, self.decoder_input_spec], self.decoder
 
     def init_input(self):
@@ -75,111 +125,113 @@ class Transformer(Model):
         embedding_scalar = Scalar(np.sqrt(self.d_model), name='embedding_scalar')
         positional_encoding = PositionalEncoding()
 
+        dropout = self.positional_encoding_dropout  # alias
+
         encoder_layer_input = embedding(self.encoder_input_spec)
         encoder_layer_input = positional_encoding(encoder_layer_input)
         encoder_layer_input = embedding_scalar(encoder_layer_input)
-        if self.dropout:
-            encoder_layer_input = Dropout(self.dropout)(encoder_layer_input)
+        if dropout:
+            encoder_layer_input = Dropout(dropout)(encoder_layer_input)
 
         decoder_layer_input = embedding(self.decoder_input_spec)
         decoder_layer_input = positional_encoding(decoder_layer_input)
         decoder_layer_input = embedding_scalar(decoder_layer_input)
-        if self.dropout:
-            decoder_layer_input = Dropout(self.dropout)(decoder_layer_input)
+        if dropout:
+            decoder_layer_input = Dropout(dropout)(decoder_layer_input)
 
         embedding_weights = embedding.embeddings if self.share_embedding_weights else None
 
         return encoder_layer_input, decoder_layer_input, embedding_weights
 
     def init_encoder(self):
-        # make encoder
-        logger.debug('making encoder')
+        logger.debug('building encoder')
         encoder_layer_input = self.encoder_layer_input
-        for i in range(1, self.encoder_layers+1):
-            names = iter([
-                'encoder_layer%s_mha' % i,
-                'encoder_layer%s_residual1' % i,
-                'encoder_layer%s_layernorm1' % i,
-                'encoder_layer%s_ffn1' % i,
-                'encoder_layer%s_ffn2' % i,
-                'encoder_layer%s_residual2' % i,
-                'encoder_layer%s_layernorm2' % i,
-            ])
-            encoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model,
-                                                   d_k=self.d_k, d_v=self.d_v, name=next(names))
-            encoder_sublayer1 = encoder_sublayer1(encoder_layer_input)
-            if self.dropout:
-                encoder_sublayer1 = Dropout(self.dropout)(encoder_sublayer1)
-            if self.residual_connections:
-                encoder_sublayer1 = Add(name=next(names))([encoder_layer_input, encoder_sublayer1])
-            if self.layer_normalization:
-                encoder_sublayer1 = LayerNormalization(name=next(names))(encoder_sublayer1)
-            encoder_sublayer2 = Dense(self.d_model, activation='relu', name=next(names))(encoder_sublayer1)
-            encoder_sublayer2 = Dense(self.d_model, name=next(names))(encoder_sublayer2)
-            if self.dropout:
-                encoder_sublayer2 = Dropout(self.dropout)(encoder_sublayer2)
-            if self.residual_connections:
-                encoder_sublayer2 = Add(name=next(names))([encoder_sublayer1, encoder_sublayer2])
-            if self.layer_normalization:
-                encoder_sublayer2 = LayerNormalization(name=next(names))(encoder_sublayer2)
+        for _ in range(self.encoder_layers):
+            # self attention
+            encoder_layer_input = self.apply_sublayer_processing(
+                encoder_layer_input, None, self.preprocess_steps)
+            encoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads,
+                                                   d_model=self.d_model,
+                                                   d_k=self.d_k,
+                                                   d_v=self.d_v)(encoder_layer_input)
+            encoder_sublayer1 = self.apply_sublayer_processing(
+                encoder_sublayer1, encoder_layer_input, self.postprocess_steps)
+            # ffn
+            encoder_sublayer1 = self.apply_sublayer_processing(
+                encoder_sublayer1, None, self.preprocess_steps)
+            encoder_sublayer2 = Dense(self.d_model, activation='relu')(encoder_sublayer1)
+            encoder_sublayer2 = Dense(self.d_model)(encoder_sublayer2)
+            encoder_sublayer2 = self.apply_sublayer_processing(
+                encoder_sublayer2, encoder_sublayer1, self.postprocess_steps)
+            # output of layer is input of next layer
             encoder_layer_input = encoder_sublayer2
-        # finally pull it all together in a model
         return encoder_sublayer2
 
     def init_decoder(self):
-        # make decoder
+        logger.debug('building decoder')
         decoder_layer_input = self.decoder_layer_input
-        logger.debug('making decoder')
-        for i in range(1, self.decoder_layers+1):
-            names = iter([
-                'decoder_layer%s_mha1' % i,
-                'decoder_layer%s_residual1' % i,
-                'decoder_layer%s_layernorm1' % i,
-                'decoder_layer%s_mha2' % i,
-                'decoder_layer%s_residual2' % i,
-                'decoder_layer%s_layernorm2' % i,
-                'decoder_layer%s_ffn1' % i,
-                'decoder_layer%s_ffn2' % i,
-                'decoder_layer%s_residual3' % i,
-                'decoder_layer%s_layernorm3' % i,
-            ])
-            decoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model,
+        for _ in range(self.decoder_layers):
+            # self attention
+            decoder_layer_input = self.apply_sublayer_processing(
+                decoder_layer_input, None, self.preprocess_steps)
+            decoder_sublayer1 = MultiHeadAttention(n_heads=self.n_heads,
+                                                   d_model=self.d_model,
                                                    d_k=self.d_k, d_v=self.d_v,
-                                                   masking=True, name=next(names))
-            decoder_sublayer1 = decoder_sublayer1(decoder_layer_input)
-            if self.dropout:
-                decoder_sublayer1 = Dropout(self.dropout)(decoder_sublayer1)
-            if self.residual_connections:
-                decoder_sublayer1 = Add(name=next(names))([decoder_layer_input, decoder_sublayer1])
-            if self.layer_normalization:
-                decoder_sublayer1 = LayerNormalization(name=next(names))(decoder_sublayer1)
-            decoder_sublayer2 = MultiHeadAttention(n_heads=self.n_heads, d_model=self.d_model,
-                                                   d_k=self.d_k, d_v=self.d_v, name=next(names))
-            decoder_sublayer2 = decoder_sublayer2([decoder_sublayer1, self.encoder, self.encoder])
-            if self.dropout:
-                decoder_sublayer2 = Dropout(self.dropout)(decoder_sublayer2)
-            if self.residual_connections:
-                decoder_sublayer2 = Add(name=next(names))([decoder_sublayer1, decoder_sublayer2])
-            if self.layer_normalization:
-                decoder_sublayer2 = LayerNormalization(name=next(names))(decoder_sublayer2)
-            decoder_sublayer3 = Dense(self.d_model, activation='relu', name=next(names))(decoder_sublayer2)
-            decoder_sublayer3 = Dense(self.d_model, name=next(names))(decoder_sublayer3)
-            if self.dropout:
-                decoder_sublayer3 = Dropout(self.dropout)(decoder_sublayer3)
-            if self.residual_connections:
-                decoder_sublayer3 = Add(name=next(names))([decoder_sublayer2, decoder_sublayer3])
-            if self.layer_normalization:
-                decoder_sublayer3 = LayerNormalization(name=next(names))(decoder_sublayer3)
-            # output of layer becomes input of next layer
+                                                   masking=True)(decoder_layer_input)
+            decoder_sublayer1 = self.apply_sublayer_processing(
+                decoder_sublayer1, decoder_layer_input, self.postprocess_steps)
+            # attention with encoder
+            decoder_sublayer1 = self.apply_sublayer_processing(
+                decoder_sublayer1, None, self.preprocess_steps)
+            decoder_sublayer2 = MultiHeadAttention(
+                n_heads=self.n_heads, d_model=self.d_model, d_k=self.d_k,
+                d_v=self.d_v)([decoder_sublayer1,self.encoder,self.encoder])
+            decoder_sublayer2 = self.apply_sublayer_processing(
+                decoder_sublayer2, decoder_sublayer1, self.postprocess_steps)
+            # ffn
+            decoder_sublayer2 = self.apply_sublayer_processing(
+                decoder_sublayer2, None, self.preprocess_steps)
+            decoder_sublayer3 = Dense(self.d_model, activation='relu')(decoder_sublayer2)
+            decoder_sublayer3 = Dense(self.d_model)(decoder_sublayer3)
+            decoder_sublayer3 = self.apply_sublayer_processing(
+                decoder_sublayer3, decoder_sublayer2, self.postprocess_steps)
+            # output of layer is input of next layer
             decoder_layer_input = decoder_sublayer3
-        # finally stack a linear transformation with softmax activation
-        # to get token probabilities
+        # finally stack a linear transformation with softmax activation to get
+        # token probabilities
         if self.share_embedding_weights:
-            final_output = SharedWeights(K.transpose(self.embedding_weights), activation=self.output_activation)
+            embedding_weights_T = K.transpose(self.embedding_weights)
+            transform = SharedWeights(embedding_weights_T, activation=self.output_activation)
         else:
-            final_output = Dense(self.vocab_size, activation=self.output_activation)
-        decoder = final_output(decoder_sublayer3)
+            transform = Dense(self.vocab_size, activation=self.output_activation)
+        decoder = transform(decoder_sublayer3)
         return decoder
+
+    @staticmethod
+    def apply_sublayer_processing(sublayer1, sublayer2, processing_steps):
+        """Apply `processing_steps` to `sublayer1`.
+
+        Args:
+            sublayer1 (keras tensor): layer to apply `processing_steps` to.
+            sublayer2 (keras tensor): Only used if `'residual_connections'` is
+                in `processing_steps`.
+            processing_steps (`list`): A list as described by the parameters
+                `preprocess_steps` and `postprocess_steps` of the
+                `Transformer` class.
+        """
+        for step in processing_steps:
+            if not isinstance(step, str):
+                step, *args = step
+            if step.lower() == 'dropout':
+                rate = args[0] if isinstance(args[0], float) else 0.1
+                sublayer1 = Dropout(rate)(sublayer1)
+            elif step.lower() == 'layer_normalization':
+                sublayer1 = LayerNormalization()(sublayer1)
+            elif step.lower() == 'residual_connections':
+                assert sublayer1 is not None, \
+                    'cannot apply residual connections on input'
+                sublayer1 = Add()([sublayer1, sublayer2])
+        return sublayer1
 
     def get_config(self):
         config = super().get_config()
@@ -187,13 +239,15 @@ class Transformer(Model):
         config['sequence_len'] = self.sequence_len
         config['encoder_layers'] = self.encoder_layers
         config['decoder_layers'] = self.decoder_layers
+        config['positional_encoding_dropout'] = self.positional_encoding_dropout
         config['d_model'] = self.d_model
         config['d_k'] = self.d_k
         config['d_v'] = self.d_v
         config['vocab_size'] = self.vocab_size
-        config['layer_normalization'] = self.layer_normalization
-        config['dropout'] = self.dropout
-        config['residual_connections'] = self.residual_connections
+        config['preprocess_steps'] = self.preprocess_steps
+        config['postprocess_steps'] = self.postprocess_steps
+        config['share_embedding_weights'] = self.share_embedding_weights
+        config['output_activation'] = self.output_activation
         return config
 
 
@@ -380,8 +434,9 @@ class LayerNormalization(Layer):
 
     def call(self, inputs):
         mean = K.mean(inputs, axis=-1, keepdims=True)
-        std = K.std(inputs, axis=-1, keepdims=True)
-        return (self.gain / (std + self.epsilon)) * (inputs - mean) + self.bias
+        std = K.std(inputs, axis=-1, keepdims=True) + self.epsilon
+        x = ((inputs - mean) / std)
+        return self.gain * x + self.bias
 
     def compute_output_shape(self, input_shape):
         return input_shape
@@ -430,20 +485,23 @@ CUSTOM_OBJECTS = {
 if __name__ == '__main__':
     import sys
 
-    N_HEADS = 8
-    ENCODER_LAYERS = DECODER_LAYERS = 2
-    D_MODEL = 64 * N_HEADS
-    VOCAB_SIZE = 32
-    SEQUENCE_LEN = 30
-    SHARE_EMBEDDING_WEIGHTS = False
     CLI = init_cli()
     _ = logging.basicConfig(level='DEBUG') if CLI.debug  else None
 
     model = Transformer(
-        n_heads=N_HEADS, encoder_layers=ENCODER_LAYERS,
-        decoder_layers=DECODER_LAYERS,
-        d_model=D_MODEL, vocab_size=VOCAB_SIZE, sequence_len=None,
-        share_embedding_weights=SHARE_EMBEDDING_WEIGHTS)
+        encoder_layers=6,
+        decoder_layers=6,
+        n_heads=8,
+        d_model=512,
+        d_k=None,
+        d_v=None,
+        vocab_size=10_000,
+        sequence_len=None,
+        preprocess_steps=['layer_normalization'],
+        postprocess_steps=[('dropout', 0.1), 'residual_connections'],
+        share_embedding_weights=True,
+        positional_encoding_dropout=0.1,
+        output_activation='softmax')
 
     if CLI.summarize_model:
         print('MODEL SUMMARY')
