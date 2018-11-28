@@ -378,9 +378,11 @@ class PositionalEncoding(Layer):
         d_model_int = K.int_shape(inputs)[2]
         rows, cols = self.indices(sequence_dim, d_model_var)
         rows, cols = K.cast(rows, dtype=K.floatx()), K.cast(cols, dtype=K.floatx())
-        numerator = K.switch(cols % 2, K.cos(rows), K.sin(rows))
-        denominator = 10_000**((2*cols)/d_model_int)
-        return inputs + (numerator / denominator)
+        numerator = rows
+        denominator = 10_000 ** ((2 * cols) / d_model_int)
+        x = numerator / denominator
+        encoding = K.switch(cols % 2, K.cos(x), K.sin(x))
+        return inputs + encoding
 
     def compute_output_shape(self, input_shape):
         return input_shape
