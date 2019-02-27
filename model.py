@@ -78,7 +78,7 @@ class Transformer(Model):
     """
     def __init__(self, *,
                  encoder_layers=None, decoder_layers=None,
-                 n_heads=None, d_model=None, d_k=None, d_v=None,
+                 n_heads=None, d_model=None, d_k=None, d_v=None, dff=None,
                  vocab_size=None, sequence_len=None,
                  preprocess_steps=None, postprocess_steps=None,
                  share_embedding_weights=True,
@@ -94,6 +94,7 @@ class Transformer(Model):
         self.d_model = d_model
         self.d_k = d_k
         self.d_v = d_v
+        self.dff = 4 * dff if dff is None else dff
         self.vocab_size = vocab_size        
         self.preprocess_steps = [] if preprocess_steps is None else preprocess_steps
         self.postprocess_steps = [] if postprocess_steps is None else postprocess_steps
@@ -159,7 +160,7 @@ class Transformer(Model):
             # ffn
             encoder_sublayer1 = self.apply_sublayer_processing(
                 encoder_sublayer1, None, self.preprocess_steps)
-            encoder_sublayer2 = Dense(self.d_model, activation='relu')(encoder_sublayer1)
+            encoder_sublayer2 = Dense(self.dff, activation='relu')(encoder_sublayer1)
             encoder_sublayer2 = Dense(self.d_model)(encoder_sublayer2)
             encoder_sublayer2 = self.apply_sublayer_processing(
                 encoder_sublayer2, encoder_sublayer1, self.postprocess_steps)
@@ -191,7 +192,7 @@ class Transformer(Model):
             # ffn
             decoder_sublayer2 = self.apply_sublayer_processing(
                 decoder_sublayer2, None, self.preprocess_steps)
-            decoder_sublayer3 = Dense(self.d_model, activation='relu')(decoder_sublayer2)
+            decoder_sublayer3 = Dense(self.dff, activation='relu')(decoder_sublayer2)
             decoder_sublayer3 = Dense(self.d_model)(decoder_sublayer3)
             decoder_sublayer3 = self.apply_sublayer_processing(
                 decoder_sublayer3, decoder_sublayer2, self.postprocess_steps)
